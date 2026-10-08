@@ -1,0 +1,17 @@
+{
+  "name": "starfall-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "《星落大陆》安卓版：把 www/ 里的网页游戏打包成 APK",
+  "scripts": {
+    "sync": "node scripts/prepare.js",
+    "platform": "cordova platform add android",
+    "build:debug": "node scripts/prepare.js && cordova build android --debug",
+    "build:release": "node scripts/prepare.js && cordova build android --release",
+    "apk": "npm run sync && cordova build android --debug"
+  },
+  "devDependencies": {
+    "cordova": "^12.0.0",
+    "cordova-android": "^13.0.0"
+  }
+}
