@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1020">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>星落大陆 Starfall Continent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230b1020'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%23ffd76a'%3E%E2%98%84%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hide">
+  <!-- 左上：头像/血条 -->
+  <div id="topbar">
+    <div id="avatarBox"><canvas id="avatarCv" width="96" height="96"></canvas><span id="pLv">Lv.1</span></div>
+    <div id="pinfo">
+      <div id="pName">星痕者</div>
+      <div class="bar bhp"><i id="bhp"></i><span id="bhptxt">100/100</span></div>
+      <div class="bar bmp"><i id="bmp"></i><span id="bmptxt">50/50</span></div>
+      <div class="bar bexp"><i id="bxp"></i><span id="bxptxt">0/102</span></div>
+      <div id="goldLine"><span id="gGold">金 0</span><span class="sep">|</span><span id="gDia">钻 0</span><span class="sep">|</span><span id="gCombat">战力 0</span></div>
+      <div id="buffs"></div>
+    </div>
+  </div>
+
+  <!-- 右上：小地图 -->
+  <div id="mmwrap">
+    <canvas id="mm" width="240" height="240"></canvas>
+    <div id="regionName">翠风平原</div>
+    <div id="coord">0,0</div>
+  </div>
+
+  <!-- 目标信息 -->
+  <div id="enemyBar" class="hide"><span id="ebName"></span><div class="bar ehp"><i id="ebHp"></i></div></div>
+
+  <!-- 底部技能栏 -->
+  <div id="bottom">
+    <div id="skillbar"></div>
+    <div id="hint">WASD 移动 ｜ 左键/E 采集面板 ｜ 左键点装备 → 装备面板（强化·洗练·打孔·镶嵌·对比·发链接）｜ Enter 世界频道 ｜ O 离线挂机 ｜ Y 拍卖行 ｜ 左键物品=信息面板（出售/上架/丢弃/发送链接） ｜ Tab 导航 ｜ B 背包 ｜ C 角色 ｜ K 制作 ｜ T 天赋 ｜ V 生活技能 ｜ M 地图 ｜ P 数据库 ｜ L 排行 ｜ Ctrl+S 保存</div>
+  </div>
+
+  <div id="log"></div>
+
+  <!-- 世界频道：发言 / 装备信息链接 / 装备对比 -->
+  <div id="chatWrap">
+    <div id="chatHead"><span>世界频道</span><span id="chatToggle">—</span></div>
+    <div id="chatMsgs"></div>
+    <div id="chatRow">
+      <select id="chatCh"><option>世界</option><option>附近</option></select>
+      <input id="chatInput" maxlength="70" placeholder="按 Enter 发言，装备可发链接">
+      <button class="btn" id="chatSend">发送</button>
+    </div>
+  </div>
+  <div id="progWrap" class="hide"><i id="progFill"></i><span id="progTxt">采集中</span></div>
+  <div id="toastWrap"></div>
+  <div id="rotateTip">建议横屏游玩</div>
+</div>
+
+<div id="tooltip" class="hide"></div>
+<div id="panelRoot"></div>
+
+<!-- ============ Tab：资源导航地图（居中弹窗） ============ -->
+<div id="ovOverlay" class="hide">
+  <div id="ovBox">
+    <div id="ovHead">
+      <span class="ot">资源导航地图</span>
+      <span class="mini">Tab 开关　·　点击地图或右侧「资源名（坐标）」即可自动前往</span>
+      <span id="ovClose">✕</span>
+    </div>
+    <div class="ovBody">
+      <div class="ovLeft">
+        <div class="ovBar">
+          <span class="mini">扫描范围</span>
+          <span id="ovRanges" class="ranges"></span>
+          <button class="btn" id="ovRefresh">重新扫描</button>
+        </div>
+        <div id="ovTabs" class="tabs"></div>
+        <canvas id="ovCv" width="600" height="600"></canvas>
+        <div id="ovFoot" class="mini"></div>
+      </div>
+      <div class="ovSide" id="ovSide"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 开场 / 标题界面 ============ -->
+<div id="screenRoot">
+  <canvas id="titleCv"></canvas>
+  <div id="titleUI">
+    <div id="logo">
+      <div class="cn">星 落 大 陆</div>
+      <div class="en">S T A R F A L L &nbsp; C O N T I N E N T</div>
+      <div class="sub">2D 开放世界 · 沙盒 RPG</div>
+    </div>
+    <div id="titleMenu">
+      <button class="tbtn" id="btnStart">开 始 旅 程</button>
+      <button class="tbtn" id="btnContinue">继 续 冒 险</button>
+      <button class="tbtn ghost" id="btnIntro">观 看 序 章</button>
+    </div>
+    <div id="titleFoot">贴图 / 立绘 / 特效 全部由系统程序化生成</div>
+  </div>
+
+  <!-- 序章动画 -->
+  <div id="intro" class="hide"><canvas id="introCv"></canvas><div id="introTxt"></div><div id="introSkip">点击跳过 ▸</div></div>
+
+  <!-- 角色创建 -->
+  <div id="create" class="hide">
+    <div class="crTitle">选择你的「星痕」</div>
+    <div id="classList"></div>
+    <div id="crBottom">
+      <input id="nickInput" maxlength="8" placeholder="输入昵称">
+      <button class="tbtn" id="btnEnter">进 入 大 陆</button>
+    </div>
+  </div>
+</div>
+
+<div id="loading" class="hide"><div class="spinner"></div><span>正在凝聚大陆…</span></div>
+
+<script src="src/00_utils.js"></script>
+<script src="src/00_assets.js"></script>
+<script src="src/01_quality.js"></script>
+<script src="src/02_items.js"></script>
+<script src="src/03_skills.js"></script>
+<script src="src/04_world_data.js"></script>
+<script src="src/05_monsters.js"></script>
+<script src="src/06_recipes.js"></script>
+<script src="src/07_talents.js"></script>
+<script src="src/08_sprites.js"></script>
+<script src="src/17_codex.js"></script>
+<script src="src/18_gear_sys.js"></script>
+<script src="src/19_chat.js"></script>
+<script src="src/20_idle.js"></script>
+<script src="src/21_market.js"></script>
+<script src="src/30_mobile.js"></script>
+<script src="src/09_world.js"></script>
+<script src="src/10_buff.js"></script>
+<script src="src/11_combat.js"></script>
+<script src="src/12_entities.js"></script>
+<script src="src/13_home.js"></script>
+<script src="src/14_ui.js"></script>
+<script src="src/15_game.js"></script>
+<script src="src/16_main.js"></script>
+</body>
+</html>
