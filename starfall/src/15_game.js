@@ -30,10 +30,19 @@ class Game {
   /* ================= 生命周期 ================= */
   resize() {
     const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1080);
-    this.cv.width = w; this.cv.height = h; this.cam.w = w; this.cam.h = h;
+    /* 画质档位：画布像素 = CSS 尺寸 × 倍率（低 0.6 / 中 0.8 / 高 1 / 4K 1.6），再由 CSS 拉伸铺满 */
+    const s = (typeof Settings !== 'undefined' && Settings.qScale) ? Settings.qScale() : 1;
+    this.cv.width = Math.max(320, Math.round(w * s));
+    this.cv.height = Math.max(240, Math.round(h * s));
+    this.cam.w = w; this.cam.h = h;
   }
   start() { requestAnimationFrame(t => this.loop(t)); }
   loop(ts) {
+    /* 帧率上限（设置模块）：未到间隔直接跳过这一帧，只排队下一帧 */
+    if (typeof Settings !== 'undefined' && Settings.frameMs) {
+      const gap = Settings.frameMs();
+      if (gap > 0 && ts - this.last < gap - 1.2) { requestAnimationFrame(t => this.loop(t)); return; }
+    }
     const dt = Math.min(0.05, (ts - this.last) / 1000); this.last = ts;
     try { this.update(dt); this.render(dt); } catch (e) { console.error(e); }
     requestAnimationFrame(t => this.loop(t));
@@ -66,6 +75,7 @@ class Game {
       if (k === 'l') UI.toggle('rank', () => UI.openRank());
       if (k === 'o') UI.toggle('idle', () => UI.openIdle());
       if (k === 'y') UI.toggle('market', () => UI.openMarket());
+      if (k === 'u') { if (typeof Settings !== 'undefined') Settings.open(); }
       if (k === 'q') this.quickPotion();
       if (k === ' ') this.player.roll(this);
       if (['1', '2', '3', '4', '5', '6'].includes(k)) this.player.castSkill(+k, this);
