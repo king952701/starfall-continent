@@ -268,8 +268,8 @@ class World {
     const px = CHUNK * TILE_PX;
     const o = CV(px, px), x = o.x;
     const useAsset = Assets.ready;
-    /* 细节层超采样倍率：手机端默认 1（省内存），桌面 2；烘焙超时自动降回 1 */
-    if (this.ss === undefined) this.ss = (typeof Mobile !== 'undefined' && Mobile.on) ? 1 : 2;
+    /* 细节层超采样倍率：统一 2（手机端也会尝试），烘焙超时自动降回 1（低端机保护） */
+    if (this.ss === undefined) this.ss = 2;
     const sc = this.ss > 1 ? 2 : 1;
     /* 预先取好含一圈邻居的地形信息，供基础贴图与细节层共用（避免重复计算噪声） */
     const N = CHUNK + 2, grid = new Array(N * N);
