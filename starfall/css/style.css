@@ -70,6 +70,16 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #log div{color:#c9d2ee;text-shadow:0 1px 2px #000;animation:fadeUp 4s forwards}
 @keyframes fadeUp{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
 
+/* 靠近资源点：自动信息面板（顶部居中，淡入淡出，不挡视线、不拦截点击） */
+#nodePop{position:absolute;top:6px;left:50%;transform:translateX(-50%);max-width:320px;
+  background:rgba(9,13,24,.88);border:1px solid rgba(255,215,106,.38);border-radius:9px;
+  padding:7px 11px;font-size:11px;line-height:1.55;color:#dfe6f5;text-align:left;
+  box-shadow:0 5px 16px rgba(0,0,0,.5);opacity:0;transition:opacity .5s ease;pointer-events:none;z-index:6}
+#nodePop.show{opacity:1}
+#nodePop .npName{font-size:13px;font-weight:700;margin-bottom:1px}
+#nodePop .npSub{opacity:.85;margin-bottom:3px}
+#nodePop .npRow{white-space:nowrap}
+#nodePop .npFoot{margin-top:3px;opacity:.6;font-size:10px}
 #progWrap{position:absolute;left:50%;top:56%;transform:translateX(-50%);width:280px;height:16px;
   background:#0a0e1a;border:1px solid var(--gold);text-align:center}
 #progWrap i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#8a6a20,var(--xp));width:0%}
