@@ -347,7 +347,8 @@ body.mobile .grid{grid-template-columns:repeat(8,40px) !important}
 body.mobile .cell{width:40px;height:40px}                 /* 触摸目标 ≥40px */
 body.mobile .btn{padding:7px 9px;font-size:12px}
 body.mobile .gHead .gName{font-size:15px}
-body.mobile .pclose{width:28px;height:28px;line-height:26px;font-size:15px;flex:0 0 28px}
+body.mobile .pclose{width:auto;min-width:72px;height:26px;line-height:24px;font-size:12px;
+  padding:0 10px;flex:0 0 auto;letter-spacing:1px;border-radius:14px}
 body.mobile .ptitle{height:34px;line-height:34px;font-size:14px}
 
 /* 标题界面：手机横屏也要完整可见 */
