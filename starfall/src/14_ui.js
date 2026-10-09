@@ -361,8 +361,10 @@ const UI = {
     if (this.tipReuse(_k, x, y)) return;
     const g = this.game, p = g.player;
     const kindCN = { mine: '采矿点', log: '伐木点', herb: '采药点', bug: '捕虫点', fish: '渔点' }[nd.skill] || '资源点';
-    let html = '<div class="tn">' + g.nodeName(nd) + '</div>';
-    html += '<div class="tq">' + kindCN + (nd.rare ? '　<b style="color:#ff54e0">稀有</b>' : '') + '</div>';
+    const nq = nodeQuality(nd.req);
+    let html = '<div class="tn" style="color:' + nq.color + '">' + g.nodeName(nd) + '</div>';
+    html += '<div class="tq">' + kindCN + '　<b style="color:' + nq.color + '">' + nq.name + '</b>' +
+      (nd.rare ? '　<b style="color:#ff54e0">稀有</b>' : '') + '</div>';
     const my = p.life[nd.skill].lv;
     const ok = my >= (nd.req || 1);
     html += '<div class="tr">采集等级：<b class="' + (ok ? 'ok' : 'bad') + '">需要 Lv.' + (nd.req || 1) + '</b>　当前 ' + SKILL_CN[nd.skill] + ' Lv.' + my + '</div>';
@@ -710,7 +712,9 @@ const UI = {
     const g = this.game, p = g.player;
     const kindCN = { mine: '采矿点', log: '伐木点', herb: '采药点', bug: '捕虫点', fish: '渔点' }[nd.skill] || '资源点';
     const my = p.life[nd.skill].lv, ok = my >= (nd.req || 1);
-    let html = '<div class="tr">资源点：<b style="color:#ffd76a">' + g.nodeName(nd) + '</b></div>';
+    const nq = nodeQuality(nd.req);
+    let html = '<div class="tr">资源点：<b style="color:' + nq.color + '">' + g.nodeName(nd) + '</b>' +
+      '　<b style="color:' + nq.color + '">' + nq.name + '</b></div>';
     html += '<div class="tr">类型：<b>' + kindCN + '</b>' + (nd.rare ? '　<b style="color:#ff54e0">稀有资源</b>' : '') + '</div>';
     html += '<div class="tr">采集等级：<b class="' + (ok ? 'ok' : 'bad') + '">' + (nd.req || 1) + ' 级</b>' +
       '　当前 ' + SKILL_CN[nd.skill] + ' Lv.' + my + '</div>';
