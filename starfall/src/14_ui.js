@@ -57,6 +57,7 @@ const UI = {
     this.buildSkillBar();
     this.buildChat();
     $('hud').classList.remove('hide');
+    window.addEventListener('resize', () => this.fitPanels());   // 旋屏 / 窗口变化时重新居中缩放
   },
   log(t, color) {
     if (!this.elLog) return;
@@ -409,20 +410,48 @@ const UI = {
   },
 
   /* ---------- 通用面板 ---------- */
-  panel(name, title, w, h, x, y) {
-    if (this.panels[name]) { this.panels[name].el.style.display = ''; return this.panels[name]; }
-    const p = el('div', 'panel');
-    let pw = w, ph = h, px = x, py = y;
+  /** 把面板缩放到可视区并居中：手机横屏/竖屏都不会超出屏幕，且内容可滚动 */
+  fitPanel(k) {
+    const pt = this.panels[k]; if (!pt || !pt.el) return null;
+    const ow = pt._ow || parseInt(pt.el.style.width) || 0;
+    const oh = pt._oh || parseInt(pt.el.style.height) || 0;
+    if (!ow || !oh) return pt;
     const vw = window.innerWidth, vh = window.innerHeight;
-    if (pw > vw - 12) pw = vw - 12;                       // 小屏自适应：不超出可视区
-    if (ph > vh - 16) ph = vh - 16;
+    const pw = Math.max(200, Math.min(ow, vw - 16));
+    const ph = Math.max(140, Math.min(oh, vh - 20));
+    const mob = (typeof Mobile !== 'undefined' && Mobile.on);
+    pt.el.style.width = pw + 'px';
+    pt.el.style.height = ph + 'px';
+    const left = mob ? Math.round((vw - pw) / 2) : (parseInt(pt.el.style.left) || Math.round((vw - pw) / 2));
+    const top = mob ? Math.max(6, Math.round((vh - ph) / 2)) : (parseInt(pt.el.style.top) || 60);
+    pt.el.style.left = clamp(left, 6, Math.max(6, vw - pw - 6)) + 'px';
+    pt.el.style.top = clamp(top, 6, Math.max(6, vh - ph - 6)) + 'px';
+    if (pt.body) pt.body.style.height = (ph - 30) + 'px';   // 内容区高度跟随缩放，超出部分可滚动
+    return pt;
+  },
+  fitPanels() { for (const k in this.panels) this.fitPanel(k); },
+
+  panel(name, title, w, h, x, y) {
+    if (this.panels[name]) {
+      const old = this.panels[name];
+      old.el.style.display = '';
+      this.fitPanel(name);
+      return old;
+    }
+    const p = el('div', 'panel');
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let pw = Math.max(200, Math.min(w, vw - 16));
+    let ph = Math.max(140, Math.min(h, vh - 20));
+    const mob = (typeof Mobile !== 'undefined' && Mobile.on);
+    const left = mob ? Math.round((vw - pw) / 2) : (x === undefined ? Math.round((vw - pw) / 2) : x);
+    const top = mob ? Math.max(6, Math.round((vh - ph) / 2)) : (y === undefined ? 60 : y);
     p.style.width = pw + 'px'; p.style.height = ph + 'px';
-    p.style.left = (px === undefined ? clamp(Math.round((vw - pw) / 2), 6, Math.max(6, vw - pw - 6)) : clamp(px, 6, Math.max(6, vw - pw - 6))) + 'px';
-    p.style.top = (py === undefined ? 60 : clamp(py, 6, Math.max(6, vh - ph - 6))) + 'px';
-    p._ow = w; p._oh = h;
+    p.style.left = clamp(left, 6, Math.max(6, vw - pw - 6)) + 'px';
+    p.style.top = clamp(top, 6, Math.max(6, vh - ph - 6)) + 'px';
     const t = el('div', 'ptitle', '<span>' + title + '</span><span class="pclose" title="关闭">✕</span>');
     const b = el('div', 'pbody');
-    b.style.height = (h - 30) + 'px';
+    b.style.height = (ph - 30) + 'px';
+    b.style.overflowY = 'auto'; b.style.overflowX = 'hidden';
     p.appendChild(t); p.appendChild(b);
     this.elRoot.appendChild(p);
     const closer = t.querySelector('.pclose');
@@ -433,8 +462,9 @@ const UI = {
     t.onmousedown = e => { drag = { x: e.clientX - parseInt(p.style.left), y: e.clientY - parseInt(p.style.top) }; };
     window.addEventListener('mouseup', () => drag = null);
     window.addEventListener('mousemove', e => { if (drag) { p.style.left = (e.clientX - drag.x) + 'px'; p.style.top = (e.clientY - drag.y) + 'px'; } });
-    const obj = { el: p, body: b, title: t };
+    const obj = { el: p, body: b, title: t, _ow: w, _oh: h };
     this.panels[name] = obj;
+    if (p._ow === undefined) { p._ow = w; p._oh = h; }   // DOM 上保留原始尺寸供 fitPanel 使用
     return obj;
   },
   toggle(name, fn) {
