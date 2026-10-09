@@ -223,21 +223,8 @@ const Mobile = {
     document.body.classList.toggle('landscape', !portrait);
     this.fitPanels();
   },
-  /** 把所有面板缩放到可视区内（手机竖屏 / 小屏也能看完面板） */
+  /** 把所有面板缩放到可视区内并居中（手机竖屏 / 小屏也能看完面板） */
   fitPanels() {
-    const maxW = window.innerWidth - 12, maxH = window.innerHeight - 16;
-    for (const k in UI.panels) {
-      const p = UI.panels[k]; if (!p || !p.el) continue;
-      const w = p._ow || parseInt(p.el.style.width) || 0;
-      const h = p._oh || parseInt(p.el.style.height) || 0;
-      if (!w || !h) continue;
-      const nw = Math.min(w, maxW), nh = Math.min(h, maxH);
-      p.el.style.width = nw + 'px'; p.el.style.height = nh + 'px';
-      const body = p.el.querySelector('.pbody');
-      if (body) body.style.height = (nh - 30) + 'px';
-      const left = parseInt(p.el.style.left) || 0, top = parseInt(p.el.style.top) || 0;
-      p.el.style.left = clamp(left, 6, Math.max(6, maxW - nw + 6)) + 'px';
-      p.el.style.top = clamp(top, 6, Math.max(6, maxH - nh + 6)) + 'px';
-    }
+    if (UI && UI.fitPanels) UI.fitPanels();
   }
 };
