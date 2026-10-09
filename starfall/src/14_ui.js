@@ -208,6 +208,20 @@ const UI = {
   },
   tipShow(html, x, y, owner) {
     this.elTip.innerHTML = html;
+    /* 触屏端没有 mouseleave：提示框需要手动关闭，否则会一直留在屏幕上 */
+    if (typeof Mobile !== 'undefined' && Mobile.on) {
+      const c = document.createElement('span');
+      c.className = 'tipClose';
+      c.textContent = '✕ 关闭';
+      c.onclick = ev => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (ev && ev.preventDefault) ev.preventDefault();
+        this.tipHide(owner);
+      };
+      this.elTip.insertBefore(c, this.elTip.firstChild);
+      if (this._tipT) clearTimeout(this._tipT);
+      this._tipT = setTimeout(() => { this._tipT = null; this.tipHide(owner); }, 6000);   // 兜底：6 秒后自动消失
+    }
     this.elTip.classList.remove('hide');
     this._tipOwner = owner || '';
     this._tipKey = '';
@@ -337,6 +351,7 @@ const UI = {
   tipHide(owner) {
     if (owner && this._tipOwner !== owner) return;
     this._tipOwner = ''; this._tipKey = '';
+    if (this._tipT) { clearTimeout(this._tipT); this._tipT = null; }
     this.elTip.classList.add('hide');
   },
 
