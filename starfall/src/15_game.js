@@ -477,7 +477,7 @@ class Game {
   /* ================= 采集 ================= */
   /** 资源点显示名 */
   nodeName(nd) {
-    if (nd.skill === 'fish') return '渔点 · ' + ({ plain: '内陆水域', forest: '林间溪流', desert: '绿洲水域', snow: '冰湖', abyss: '深渊暗流', ruin: '星陨湖', waste: '荒原水泊', coast: '近海渔场' }[nd.area] || '淡水');
+    if (nd.skill === 'fish') return '渔点 · ' + ({ plain: '内陆水域', forest: '林间溪流', desert: '绿洲水域', snow: '冰湖', abyss: '深渊暗流', ruin: '星陨湖', waste: '荒原水泊', coast: '近海渔场', sea: '远海渔场', river: '蜿蜒江河', lake: '平静湖泊' }[nd.area] || '淡水');
     const it = ITEMS[nd.itemId];
     if (!it) return '资源点';
     // 矿石统一叫「××矿脉」，煤炭/宝石等非「矿石」结尾的词也按同一规则补后缀
@@ -1071,40 +1071,62 @@ class Game {
     if (night > 0.05) {                            // 提灯暖光
       const z = this.cam.zoom || 1;
       const sx = (this.player.x - cam.x) * z, sy = (this.player.y - cam.y) * z;
-      const g = ctx.createRadialGradient(sx, sy, 20, sx, sy, 250);
-      g.addColorStop(0, 'rgba(255,200,120,' + (night * 0.20).toFixed(3) + ')');
-      g.addColorStop(1, 'rgba(255,200,120,0)');
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      try {
+        const g = ctx.createRadialGradient(sx, sy, 20, sx, sy, 250);
+        g.addColorStop(0, 'rgba(255,200,120,' + (night * 0.20).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(255,200,120,0)');
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      } catch (e) { /* 渐变创建失败（老内核）→ 退化为柔和圆光 */ }
+      ctx.restore();
     }
     /* 太阳方向光：从太阳所在一侧洒下的暖光，正午最盛、黄昏偏橙、夜间消失 */
     const s = this._sun || (this._sun = this.sun());
     if (s.light > 0.04 && night < 0.7) {
-      const warm = dusk > 0.3 ? '255,170,90' : '255,222,158';
-      const g3 = ctx.createLinearGradient(s.x >= 0 ? w : 0, 0, s.x >= 0 ? 0 : w, h * 0.65);
-      g3.addColorStop(0, 'rgba(' + warm + ',' + (0.13 * s.light).toFixed(3) + ')');
-      g3.addColorStop(1, 'rgba(' + warm + ',0)');
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = g3; ctx.fillRect(0, 0, w, h);
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      try {
+        const warm = dusk > 0.3 ? '255,170,90' : '255,222,158';
+        const g3 = ctx.createLinearGradient(s.x >= 0 ? w : 0, 0, s.x >= 0 ? 0 : w, h * 0.65);
+        g3.addColorStop(0, 'rgba(' + warm + ',' + (0.13 * s.light).toFixed(3) + ')');
+        g3.addColorStop(1, 'rgba(' + warm + ',0)');
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = g3; ctx.fillRect(0, 0, w, h);
+      } catch (e) { }
+      ctx.restore();
     }
     const r = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
     const fog = (r && r.pal && r.pal.fog) || '#9fb4c8';
-    const key = w + 'x' + h + '|' + fog;
-    if (this._fogKey !== key) {                    // 渐变缓存：尺寸或雾色变化才重建
-      const g2 = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.28, w / 2, h / 2, Math.max(w, h) * 0.80);
-      g2.addColorStop(0, 'rgba(0,0,0,0)');
-      g2.addColorStop(1, fog);
-      this._fogKey = key; this._fogGrad = g2;
-    }
     /* 天气能见度：雨/雪/雷暴时雾更重，视野变差 */
     const wvis = (typeof Weather !== 'undefined' && Weather.visMul) ? Weather.visMul() : 1;
     ctx.save();
     ctx.globalAlpha = clamp(0.16 + night * 0.06 + (1 - wvis) * 0.62, 0, 0.62);
-    ctx.fillStyle = this._fogGrad;
-    ctx.fillRect(0, 0, w, h);
+    const fogCv = this.bakeMask('fog|' + fog, w, h, (x, W, H) => {
+      const g2 = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.28, W / 2, H / 2, Math.max(W, H) * 0.80);
+      g2.addColorStop(0, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, fog);
+      x.fillStyle = g2; x.fillRect(0, 0, W, H);
+    });
+    if (fogCv) ctx.drawImage(fogCv, 0, 0, w, h);
+    else { ctx.fillStyle = fog; ctx.fillRect(0, 0, w, h); }   // 兜底：纯色雾
     ctx.restore();
+  }
+  /** 遮罩烘焙：把径向渐变画到离屏画布再 drawImage 叠加。
+   *  部分安卓 WebView 对「跨帧复用的 CanvasGradient」兼容性差（会渲染成实心黑块），
+   *  且窗口尺寸变化后必须重建 —— 这里以 key+尺寸 为缓存键，尺寸变了自动重烘。 */
+  bakeMask(key, w, h, paint) {
+    const store = this._masks || (this._masks = {});
+    const hit = store[key];
+    const W = Math.max(1, Math.ceil(w)), H = Math.max(1, Math.ceil(h));
+    if (hit && hit.cv.width === W && hit.cv.height === H) return hit.cv;
+    try {
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const x = c.getContext('2d');
+      paint(x, W, H);
+      store[key] = { cv: c };
+      return c;
+    } catch (e) { store[key] = { cv: null }; return null; }
   }
   /* ---------- 环境粒子：雪 / 沙 / 落叶 / 萤火 / 花瓣（按大区自动切换） ---------- */
   ambientKind() {
@@ -1258,12 +1280,15 @@ class Game {
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }
   drawVignette(ctx) {
-    if (!this._vig) {
-      const g = ctx.createRadialGradient(this.cam.w / 2, this.cam.h / 2, this.cam.h * 0.35, this.cam.w / 2, this.cam.h / 2, this.cam.h * 0.85);
-      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.55)');
-      this._vig = g;
-    }
-    ctx.fillStyle = this._vig; ctx.fillRect(0, 0, this.cam.w, this.cam.h);
+    const w = this.cam.w, h = this.cam.h;
+    /* 暗角同样烘焙成离屏画布：不再跨帧复用 CanvasGradient（老内核兼容），尺寸变化自动重建 */
+    const cv = this.bakeMask('vig', w, h, (x, W, H) => {
+      const g = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.72);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,.55)');
+      x.fillStyle = g; x.fillRect(0, 0, W, H);
+    });
+    if (cv) ctx.drawImage(cv, 0, 0, w, h);
   }
   drawMinimap() {
     const cv = $('mm'), x = cv.getContext('2d');
