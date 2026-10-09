@@ -209,6 +209,18 @@ function beginGame(g, isNew) {
   const ac = $('avatarCv').getContext('2d');
   ac.clearRect(0, 0, 96, 96);
   ac.drawImage(av, 0, 0, 96, 96);
+  /* 点击头像 → 角色 / 宠物信息面板（桌面 click + 移动 touchstart 双绑定） */
+  const ab = $('avatarBox');
+  if (ab && !ab._charBound) {
+    ab._charBound = true;
+    const openChar = e => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      if (typeof UI !== 'undefined' && UI.openChar) { Snd.play('click'); UI.toggle('char', () => UI.openChar()); }
+    };
+    ab.addEventListener('click', openChar);
+    ab.addEventListener('touchstart', openChar, { passive: false });
+    ab._openChar = openChar;
+  }
   const _z = g.cam.zoom || 1;
   g.cam.x = g.player.x - g.cam.w / _z / 2; g.cam.y = g.player.y - g.cam.h / _z / 2;
   if (g.clampCam) g.clampCam();
