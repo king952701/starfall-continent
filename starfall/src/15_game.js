@@ -897,6 +897,7 @@ class Game {
     }
     this.drawFloats(ctx);
     ctx.restore();
+    this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
     this.drawVignette(ctx);
     if (!this.inHome) this.drawMinimap();
     if (this.interactHint) {
@@ -909,6 +910,44 @@ class Game {
       ctx.fillText(this.interactHint, cam.w / 2, y - 62);
       ctx.textAlign = 'left';
     }
+  }
+  /* ---------- 大气层：远景雾化 + 昼夜光照 ----------
+   * 一轮昼夜 8 分钟：0 清晨 / .25 正午 / .52 黄昏 / .75 夜晚
+   * 夜间玩家自带暖光（提灯），雾色取自当前大区的 pal.fog */
+  drawAtmosphere(ctx) {
+    if (this.inHome) return;                       // 家园室内保持明亮
+    const cam = this.cam, w = cam.w, h = cam.h;
+    const DAY = 480;
+    const ph = ((this.timeSec % DAY) + DAY) % DAY / DAY;
+    const night = clamp(1 - Math.abs(ph - 0.75) / 0.22, 0, 1);
+    const dusk = clamp(1 - Math.abs(ph - 0.52) / 0.16, 0, 1);
+    const dawn = clamp(1 - Math.min(Math.abs(ph - 0.02), Math.abs(ph - 0.98)) / 0.10, 0, 1);
+    if (night > 0.01) { ctx.fillStyle = 'rgba(26,34,78,' + (night * 0.30).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
+    if (dusk > 0.01) { ctx.fillStyle = 'rgba(255,146,70,' + (dusk * 0.13).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
+    if (dawn > 0.01) { ctx.fillStyle = 'rgba(255,190,140,' + (dawn * 0.10).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
+    if (night > 0.05) {                            // 提灯暖光
+      const sx = this.player.x - cam.x, sy = this.player.y - cam.y;
+      const g = ctx.createRadialGradient(sx, sy, 20, sx, sy, 250);
+      g.addColorStop(0, 'rgba(255,200,120,' + (night * 0.20).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(255,200,120,0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    const r = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
+    const fog = (r && r.pal && r.pal.fog) || '#9fb4c8';
+    const key = w + 'x' + h + '|' + fog;
+    if (this._fogKey !== key) {                    // 渐变缓存：尺寸或雾色变化才重建
+      const g2 = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.28, w / 2, h / 2, Math.max(w, h) * 0.80);
+      g2.addColorStop(0, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, fog);
+      this._fogKey = key; this._fogGrad = g2;
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.16 + night * 0.06;
+    ctx.fillStyle = this._fogGrad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   }
   drawPlayer(ctx, p) {
     const sp = Sprites.player(p.clsKey);
