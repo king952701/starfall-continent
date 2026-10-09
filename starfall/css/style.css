@@ -371,6 +371,7 @@ body.mobile #progWrap{bottom:120px}
 body.mobile.portrait #chatWrap{width:min(64vw,340px);max-width:64vw}
 body.mobile .pbody{font-size:12px}
 body.mobile .grid{grid-template-columns:repeat(8,40px) !important}
+body.mobile .eqgrid{grid-template-columns:repeat(3,40px) !important}   /* 角色装备栏：3×3，不被背包的 8 列规则覆盖 */
 body.mobile .cell{width:40px;height:40px}                 /* 触摸目标 ≥40px */
 body.mobile .btn{padding:7px 9px;font-size:12px}
 body.mobile .gHead .gName{font-size:15px}

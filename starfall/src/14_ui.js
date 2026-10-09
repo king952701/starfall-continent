@@ -973,8 +973,10 @@ const UI = {
     p.body.innerHTML = '';
     const row = el('div', 'rowline');
     const left = el('div', 'col'); left.style.maxWidth = '210px';
-    const grid = el('div', 'grid'); grid.style.gridTemplateColumns = 'repeat(3,44px)';
-    const slots = ['helmet', 'chest', 'legs', 'weapon', 'offhand', 'boots', 'ring', 'necklace', 'amulet'];
+    /* eqgrid：装备栏固定 3×3。用独立类名，避免被 body.mobile .grid 的 8 列规则（背包用）压乱 */
+    const grid = el('div', 'grid eqgrid'); grid.style.gridTemplateColumns = 'repeat(3,44px)';
+    const slots = (typeof EQP_ORDER !== 'undefined') ? EQP_ORDER
+      : ['weapon', 'offhand', 'helmet', 'chest', 'legs', 'boots', 'ring', 'necklace', 'amulet'];
     slots.forEach(s => {
       const d = el('div', 'cell');
       const inst = this.game.player.equip[s];
