@@ -439,11 +439,12 @@ const Idle = {
     return out.filter(o => p.life[o.skill].lv >= 1).sort((a, b) => a.lv - b.lv);
   },
   fishTargets() {
+    const AREA_CN = { plain: '内陆水域', forest: '林间溪流', desert: '绿洲水域', snow: '冰湖', abyss: '深渊暗流', ruin: '星陨湖', waste: '荒原水泊', coast: '近海渔场', sea: '远海', river: '蜿蜒江河', lake: '平静湖泊' };
     const areas = {};
     Object.values(ITEMS).forEach(i => { if (i.sub === 'fish') (areas[i.region] = areas[i.region] || []).push(i.name); });
     return Object.keys(areas).map(k => {
       const reg = REGIONS.find(r => r.fishArea === k);
-      return { key: k, name: (reg ? reg.name : k) + '渔区', count: areas[k].length, sample: areas[k].slice(0, 3).join('、') };
+      return { key: k, name: (reg ? reg.name : AREA_CN[k] || k) + '渔区', count: areas[k].length, sample: areas[k].slice(0, 3).join('、') };
     });
   },
   combatTargets() {
