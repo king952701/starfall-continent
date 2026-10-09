@@ -369,6 +369,31 @@ body.mobile .clsCard canvas{height:20vh;max-height:118px;min-height:70px}
 body.mobile .clsCard .cn3{font-size:13px;margin:2px 0;letter-spacing:1px}
 body.mobile #crBottom{gap:6px}
 
+/* 致谢页（进入游戏后首次自动弹出；标题界面可再次打开） */
+.creditsMask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(6,9,18,.84);
+  display:flex;align-items:center;justify-content:center;z-index:9999}
+.creditsBox{width:min(92vw,780px);max-height:92vh;display:flex;flex-direction:column;
+  background:#11172b;border:1px solid #2b3557;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+.crHead{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 12px;border-bottom:1px solid #2b3557;flex:0 0 auto}
+.crTitle{font-size:18px;letter-spacing:2px;color:#ffd76a}
+.crBody{padding:12px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  touch-action:pan-y;overscroll-behavior:contain;flex:1 1 auto}
+.crP{margin:0 0 8px;font-size:13px;line-height:1.75;color:#c9d4ef}
+.crP.en{color:#8fa2c8;font-size:12px}
+.crSec{margin:12px 0 6px;font-size:13px;color:#ffd76a;border-left:3px solid #ffd76a;padding-left:6px}
+.crItem{padding:7px 9px;margin-bottom:6px;background:#0d1324;border:1px solid #222c4a;border-radius:6px}
+.crLink{color:#7fd0ff;font-size:13px;text-decoration:none;display:inline-block}
+.crName{color:#c9d4ef;font-size:13px}
+.crMeta{margin-top:3px;font-size:11px;color:#8fa2c8}
+.crFoot{padding:10px 12px;border-top:1px solid #2b3557;text-align:right;flex:0 0 auto}
+body.mobile .creditsBox{width:96vw;max-height:94vh}
+body.mobile .crBody{max-height:74vh}
+body.mobile .crTitle{font-size:15px}
+body.mobile .crP{font-size:12px}
+body.mobile .crP.en{font-size:11px}
+body.mobile .crLink,body.mobile .crName{font-size:12px}
+
 /* Tab 资源导航地图：整体不超出屏幕并可滚动 */
 body.mobile #ovBox{max-width:96vw;max-height:94vh;display:flex;flex-direction:column}
 body.mobile .ovBody{max-height:86vh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
