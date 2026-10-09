@@ -218,6 +218,14 @@ function beginGame(g, isNew) {
     UI.toast('旅程开始', '#ffd76a');
   }
   Ach.check(g);
+  /* 首次进入游戏自动弹出「致谢」页（之后可在标题界面「致谢 / Credits」再次打开） */
+  try {
+    const seen = localStorage.getItem('sf_credits_seen');
+    if (!seen) {
+      localStorage.setItem('sf_credits_seen', '1');
+      setTimeout(() => { if (typeof UI !== 'undefined' && UI.showCredits) UI.showCredits(); }, 600);
+    }
+  } catch (e) { /* 存储不可用时直接跳过 */ }
 }
 
 /* ---------------- 引导 ---------------- */
@@ -234,6 +242,7 @@ addEventListener('DOMContentLoaded', () => {
   buildClassCards();
   $('btnStart').onclick = () => { $('titleMenu').style.display = 'none'; $('create').classList.remove('hide'); buildClassCards(); };
   $('btnIntro').onclick = () => { $('titleMenu').style.display = 'none'; Intro.show(() => { $('titleMenu').style.display = ''; }); };
+  $('btnCredits').onclick = () => { if (typeof UI !== 'undefined' && UI.showCredits) UI.showCredits(); };
   $('btnContinue').onclick = continueGame;
   $('btnEnter').onclick = startNewGame;
   $('nickInput').addEventListener('keydown', e => { if (e.key === 'Enter') startNewGame(); });
