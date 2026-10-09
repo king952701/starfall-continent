@@ -16,19 +16,34 @@ const Mobile = {
 
   init(game) {
     this.game = game;
-    const touch = ('ontouchstart' in window) ||
-      (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0);
-    const small = window.innerWidth < 900 || window.innerHeight < 620;
-    this.on = !!(touch || small);
+    this.detect();                                        // 已在脚本加载期执行过也无妨（幂等）
     if (!this.on) return false;
-    document.body.classList.add('mobile');
     this.buildJoystick();
     this.buildActions();
     this.buildMenu();
     this.bindCanvas();
-    this.bindResize();
-    this.layout();
     if (UI.refresh) UI.refresh();
+    return true;
+  },
+
+  /** 尽早检测移动环境：脚本加载即执行，标题 / 角色选择界面也能套用手机样式 */
+  detect() {
+    const touch = ('ontouchstart' in window) ||
+      (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0);
+    const small = window.innerWidth < 900 || window.innerHeight < 620;
+    const ua = typeof navigator !== 'undefined' && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+    this.on = !!((touch && small) || (touch && ua) || (ua && small));
+    if (!this.on) return false;
+    if (document.body) {
+      document.body.classList.add('mobile');
+      const portrait = window.innerHeight > window.innerWidth;
+      document.body.classList.toggle('portrait', portrait);
+      document.body.classList.toggle('landscape', !portrait);
+    }
+    if (!this._resizeBound) {
+      this._resizeBound = true;
+      this.bindResize();
+    }
     return true;
   },
 
@@ -228,3 +243,7 @@ const Mobile = {
     if (UI && UI.fitPanels) UI.fitPanels();
   }
 };
+
+/* 脚本加载即检测（body 此时已存在：脚本位于 </body> 前），
+   让标题界面 / 角色选择界面立即套用手机端样式 */
+try { Mobile.detect(); } catch (e) { /* 忽略极早期异常 */ }
