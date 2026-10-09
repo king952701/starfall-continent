@@ -23,6 +23,7 @@ const Mobile = {
     this.buildMenu();
     this.bindCanvas();
     if (UI.refresh) UI.refresh();
+    if (typeof Settings !== 'undefined') Settings.applyUI();   // 应用玩家保存过的 UI 布局
     return true;
   },
 
@@ -116,12 +117,28 @@ const Mobile = {
       return b;
     };
     const g = this.game;
-    add('攻击', 'big', () => { if (g.player.dead) return; g.player.basicAttack(g); g.clickTarget(); });
-    add('采集', '', () => {
+    /* 横屏中部（水平居中）：采集 / 交互 —— 各机型按比例定位，不遮挡摇杆与攻击键 */
+    const mid = el('div', 'mMid');
+    const addMid = (label, cls, fn) => {
+      const b = el('div', 'mbtn ' + (cls || ''), label);
+      b.addEventListener('touchstart', e => {
+        e.preventDefault(); e.stopPropagation();
+        b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 130);
+        fn();
+      }, { passive: false });
+      b.addEventListener('click', e => e.preventDefault());
+      mid.appendChild(b);
+      return b;
+    };
+    addMid('采集', 'mid', () => {
       const nd = this.nearestNode(3.6);
       if (nd) UI.openNode(nd); else UI.toast('附近没有资源点', '#ff9a9a');
     });
-    add('交互', '', () => g.tryInteract());
+    addMid('交互', 'mid', () => g.tryInteract());
+    hud.appendChild(mid);
+    this.mid = mid;
+
+    add('攻击', 'big', () => { if (g.player.dead) return; g.player.basicAttack(g); g.clickTarget(); });
     add('翻滚', '', () => { if (!g.player.dead) g.player.roll(g); });
     add('药水', 'mid', () => g.quickPotion());
     hud.appendChild(wrap);
@@ -165,6 +182,7 @@ const Mobile = {
       ['拍卖', () => UI.toggle('market', () => UI.openMarket())],
       ['导航', () => UI.toggleOverview()],
       ['频道', () => UI.focusChat()],
+      ['设置', () => { if (typeof Settings !== 'undefined') Settings.open(); }],
       ['存档', () => { this.game.save(true); UI.toast('已存档', '#ffd76a'); }]
     ];
     const list = el('div', 'mMenuList');
