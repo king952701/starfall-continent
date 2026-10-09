@@ -81,7 +81,8 @@ const Settings = {
   /* 画质：渲染分辨率倍率（画布像素 = CSS 尺寸 × 倍率，CSS 再拉伸铺满） */
   QUALITY: [['low', '低分辨率', 0.6], ['mid', '中分辨率', 0.8], ['high', '高分辨率', 1], ['4k', '4K', 1.6]],
   FPS: [[15, '15 fps'], [30, '30 fps'], [60, '60 fps'], [120, '120 fps'], [0, '无上限']],
-  data: { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, ui: {} },
+  ZOOMS: [[0.6, '×0.6'], [0.8, '×0.8'], [1, '×1.0 标准'], [1.5, '×1.5'], [2, '×2.0']],
+  data: { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, ui: {} },
   editMode: false,
   _panel: null,
 
@@ -347,11 +348,26 @@ const Settings = {
     ubox.appendChild(bEdit); ubox.appendChild(bSave); ubox.appendChild(bReset);
     ur.appendChild(ubox);
 
-    /* 6) 全部重置 */
+    /* 6) 视野缩放（手机也可双指缩放） */
+    sec('视野 / Camera Zoom');
+    const zr = row('缩放倍率', '当前 ×' + (this.data.zoom || 1).toFixed(2) + '（手机：双指张合缩放）');
+    const zbox = el('div', 'setBtns');
+    this.ZOOMS.forEach(z => {
+      const b = el('button', 'btn' + (Math.abs((this.data.zoom || 1) - z[0]) < 0.02 ? ' gold' : ''), z[1]);
+      b.onclick = () => {
+        this.data.zoom = z[0]; this.save(); Snd.play('ok');
+        if (typeof window !== 'undefined' && window.GAME && window.GAME.setZoom) window.GAME.setZoom(z[0]);
+        this.open();
+      };
+      zbox.appendChild(b);
+    });
+    zr.appendChild(zbox);
+
+    /* 7) 全部重置 */
     const bottom = el('div', 'setBtns');
     const bAll = el('button', 'btn', '恢复全部默认设置');
     bAll.onclick = () => {
-      this.data = { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, ui: {} };
+      this.data = { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, ui: {} };
       this.save(); this.applyAll(); Snd.play('ok'); this.open();
     };
     bottom.appendChild(bAll);
