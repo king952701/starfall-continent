@@ -17,7 +17,9 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #hud{position:absolute;inset:0;pointer-events:none;z-index:20}
 #topbar{position:absolute;top:12px;left:12px;display:flex;gap:10px;align-items:flex-start}
 #avatarBox{position:relative;width:72px;height:72px;flex:0 0 72px;border:2px solid var(--gold);
-  background:radial-gradient(circle at 50% 30%,#1d2748,#090c18);box-shadow:0 0 14px rgba(255,215,106,.25)}
+  background:radial-gradient(circle at 50% 30%,#1d2748,#090c18);box-shadow:0 0 14px rgba(255,215,106,.25);
+  pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#avatarBox:active{filter:brightness(1.25)}
 #avatarBox canvas{width:100%;height:100%;image-rendering:pixelated}
 #pLv{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);background:#141a2c;
   border:1px solid var(--gold);border-radius:8px;font-size:11px;padding:0 7px;color:var(--gold);white-space:nowrap}
