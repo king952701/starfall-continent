@@ -45,21 +45,53 @@ class World {
 
   keyTile(tx, ty) { return (tx >> 4) + ',' + (ty >> 4); }
 
-  /* ---------- 地形信息（纯函数，供小地图等使用） ---------- */
+  /* ---------- 地形信息（纯函数，供小地图等使用） ----------
+   * 水体四类：sea 大陆边缘海洋 / river 蜿蜒大河 / stream 潺潺小溪 / lake 平静湖泊 / pond 内陆池塘 */
   tileInfo(tx, ty) {
     const r = regionAtTile(tx, ty);
     const h = fbm(tx * 0.012, ty * 0.012, this.seed, 4);
     const h2 = fbm(tx * 0.05, ty * 0.05, this.seed + 7, 3);
-    let water = false, mountain = false;
+    let water = false, mountain = false, wkind = '';
     const outside = tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE;
-    if (outside) water = true;
-    else if (r.key === 'sea') water = h < 0.55;
+    if (outside) { water = true; wkind = 'sea'; }
+    else if (r.key === 'sea') { water = h < 0.55; wkind = 'sea'; }
     else {
-      water = h < 0.16;
-      if (tx >= 9200 || (ty >= 3000 && ty < 9000 && tx >= 9050)) water = water || h < 0.5;
+      if (h < 0.16) { water = true; wkind = 'pond'; }            // 原有内陆池塘
+      /* 大陆四面边缘 → 波涛汹涌的海洋：距边越近水概率越高（约 360 格过渡带） */
+      const edge = Math.min(tx, ty, WORLD_SIZE - 1 - tx, WORLD_SIZE - 1 - ty);
+      if (edge < 360) {
+        const t = edge / 360;
+        if (h < 0.48 + t * 0.34) { water = true; wkind = 'sea'; }
+      } else if (tx >= 9200 || (ty >= 3000 && ty < 9000 && tx >= 9050)) {
+        if (h < 0.5) { water = true; wkind = 'sea'; }
+      }
+      if (!water) {
+        /* 蜿蜒大河：脊状噪声带（等值线随地形蜿蜒，宽 4~7 格，贯穿大陆）；
+         * ford 场 > 0.62 处露出浅滩，保证大陆可穿越（每约百余格一处渡口） */
+        const rv = Math.abs(fbm(tx * 0.004 + 31.7, ty * 0.004 - 17.3, this.seed + 401, 3) - 0.5);
+        const ford = fbm(tx * 0.021 + 7.7, ty * 0.021 - 3.3, this.seed + 555, 2);
+        if (rv < 0.013 && ford < 0.62) { water = true; wkind = 'river'; }
+        else if (rv < 0.013) { water = false; wkind = 'ford'; }
+        else {
+          /* 潺潺小溪：更细更曲折，按区块随机出现（约 38% 的区块有溪流）；浅水可涉渡 */
+          const st = Math.abs(fbm(tx * 0.009 - 53.1, ty * 0.009 + 29.7, this.seed + 809, 2) - 0.5);
+          if (st < 0.0055 && hash2(tx >> 4, ty >> 4, this.seed + 911) < 0.38) { water = true; wkind = 'stream'; }
+          else {
+            /* 波澜不惊的湖泊：低频噪声团（成片圆湖） */
+            const lk = fbm(tx * 0.016 + 101.3, ty * 0.016 - 77.8, this.seed + 1301, 3);
+            if (lk > 0.735) { water = true; wkind = 'lake'; }
+          }
+        }
+      }
+      /* 所有村落 / 营地周围 8 格（含边界）保持干燥，河道不冲垮建筑 */
+      if (water && wkind !== 'pond') {
+        for (const s of this.sites) {
+          if (Math.abs(tx - s.tx) <= 8 && Math.abs(ty - s.ty) <= 8) { water = false; wkind = ''; break; }
+        }
+      }
     }
     mountain = !water && h > 0.74 && r.key !== 'sea';
-    return { r: r, h: h, h2: h2, water: water, mountain: mountain, variant: Math.floor(h2 * 3) % 3 };
+    return { r: r, h: h, h2: h2, water: water, mountain: mountain, wkind: wkind, variant: Math.floor(h2 * 3) % 3 };
   }
 
   /* ---------- 区块生成 ---------- */
@@ -154,15 +186,20 @@ class World {
         }
       }
     }
-    /* --- 水边的钓鱼点 --- */
+    /* --- 水边的钓鱼点：海洋 / 大河 / 小溪 / 湖泊贴岸生成，河溪更密 --- */
     for (let ly = 0; ly < CHUNK; ly++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const tx = btx + lx, ty = bty + ly;
-        if (!this.tileInfo(tx, ty).water) continue;
+        const info = this.tileInfo(tx, ty);
+        if (!info.water) continue;
         const nearLand = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(d => !this.tileInfo(tx + d[0], ty + d[1]).water);
-        if (nearLand && chance(0.012)) {
+        if (!nearLand) continue;
+        const dens = (info.wkind === 'river' || info.wkind === 'stream') ? 0.022 : 0.012;
+        if (chance(dens)) {
           const rr = REGION_BY_KEY[regionAtTile(tx, ty).key];
-          ch.objs.push({ lx: lx, ly: ly, kind: 'fish', sp: Sprites.fishSpot(), ox: 0, oy: 0, solid: false, node: this._mkFishNode(rr, tx, ty) });
+          const area = (info.wkind === 'river' || info.wkind === 'stream') ? 'river'
+            : info.wkind === 'lake' ? 'lake' : rr.fishArea;
+          ch.objs.push({ lx: lx, ly: ly, kind: 'fish', sp: Sprites.fishSpot(), ox: 0, oy: 0, solid: false, node: this._mkFishNode(rr, tx, ty, area) });
         }
       }
     }
@@ -190,14 +227,16 @@ class World {
       respawnAt: 0, dead: 0, rare: chance(0.06)
     };
   }
-  _mkFishNode(rr, tx, ty) {
-    return { skill: 'fish', itemId: 0, req: 1, tx: tx, ty: ty, amount: 999, max: 999, respawnAt: 0, area: rr.fishArea };
+  _mkFishNode(rr, tx, ty, area) {
+    return { skill: 'fish', itemId: 0, req: 1, tx: tx, ty: ty, amount: 999, max: 999, respawnAt: 0, area: area || rr.fishArea };
   }
 
   /* ---------- 查询 ---------- */
   solidTile(tx, ty) {
     const info = this.tileInfo(tx, ty);
-    if (info.water || info.mountain) return true;
+    /* 小溪（stream）是浅水，可以涉水通过；江河/湖/海为硬碰撞 */
+    if (info.water && info.wkind !== 'stream') return true;
+    if (info.mountain) return true;
     const ch = this.getChunk(tx >> 4, ty >> 4);
     return !!ch.solid[(ty & 15) * CHUNK + (tx & 15)];
   }
