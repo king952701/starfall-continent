@@ -230,7 +230,7 @@ canvas.ic{image-rendering:pixelated}
 .rkRow .bar2{position:absolute;right:8px;bottom:3px;width:120px}
 
 /* ---------- 世界频道 ---------- */
-#chatWrap{position:absolute;left:10px;bottom:104px;width:360px;max-width:40vw;z-index:12;pointer-events:auto;
+#chatWrap{position:absolute;left:10px;bottom:104px;width:300px;max-width:34vw;z-index:12;pointer-events:auto;
   background:rgba(8,12,24,.82);border:1px solid var(--line);border-radius:4px;backdrop-filter:blur(3px)}
 #chatWrap input,#chatWrap select,#chatWrap button{pointer-events:auto}
 #chatHead{display:flex;justify-content:space-between;align-items:center;padding:2px 6px;
@@ -366,9 +366,9 @@ body.mobile #mmwrap{top:8px;right:8px;transform:scale(.62);transform-origin:top 
 body.mobile #topbar{top:8px;left:8px;transform:scale(.78);transform-origin:top left}
 body.mobile #bottom{bottom:8px}
 body.mobile #skillbar{gap:4px}
-body.mobile #chatWrap{left:8px;bottom:104px;width:min(58vw,420px);max-width:58vw}
+body.mobile #chatWrap{left:8px;bottom:104px;width:min(34vw,300px);max-width:34vw}
 body.mobile #progWrap{bottom:120px}
-body.mobile.portrait #chatWrap{width:min(86vw,520px);max-width:86vw}
+body.mobile.portrait #chatWrap{width:min(64vw,340px);max-width:64vw}
 body.mobile .pbody{font-size:12px}
 body.mobile .grid{grid-template-columns:repeat(8,40px) !important}
 body.mobile .cell{width:40px;height:40px}                 /* 触摸目标 ≥40px */
