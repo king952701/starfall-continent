@@ -20,9 +20,67 @@ function shade(hex, amt) {
   return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
+/** 资源点采集需求等级 → 品质（贴图按品质色着色，越高等级越华丽） */
+function nodeQuality(req) {
+  const r = +req || 1;
+  const q = r <= 2 ? 2 : r <= 4 ? 3 : r <= 6 ? 4 : r <= 8 ? 5 : r <= 11 ? 6 : r <= 14 ? 7 : r <= 18 ? 8 : r <= 24 ? 9 : 10;
+  return getQuality(q);
+}
+
 const Sprites = {
   _cache: {},
-  key(k, fn) { if (!this._cache[k]) this._cache[k] = fn(); return this._cache[k]; },
+  key(k, fn) {
+    if (!this._cache[k]) { const c = fn(); if (c && c.tagName === 'CANVAS') c._sk = k; this._cache[k] = c; }
+    return this._cache[k];
+  },
+  /* ---------- 资源点按等级着色：保留原模型轮廓，叠品质色 + 等级晶簇 ---------- */
+  nodeTier(base, color, tier) {
+    if (!base) return base;
+    if (tier <= 2) return base;                 // 普通 / 粗糙级保持原样，不做着色与装饰
+    const bk = base._sk || (base.width + 'x' + base.height);
+    return this.key('nt' + tier + '|' + bk + '|' + color, () => {
+      const pad = 5, w = base.width + pad * 2, h = base.height + pad * 2;
+      const o = CV(w, h), x = o.x;
+      /* 1) 品质色描边：用纯色剪影在四周各偏移 1px 画出轮廓 */
+      const sil = CV(base.width, base.height), sxx = sil.x;
+      sxx.drawImage(base, 0, 0);
+      sxx.globalCompositeOperation = 'source-in';
+      sxx.fillStyle = color; sxx.fillRect(0, 0, base.width, base.height);
+      for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1]]) x.drawImage(sil.c, pad + d[0], pad + d[1]);
+      /* 2) 原模型 */
+      x.drawImage(base, pad, pad);
+      /* 3) 品质色调：只在模型不透明处叠加，保持像素轮廓清晰 */
+      x.globalCompositeOperation = 'source-atop';
+      x.globalAlpha = tier >= 7 ? 0.46 : 0.34;
+      x.fillStyle = color; x.fillRect(0, 0, w, h);
+      x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+      /* 4) 等级越高越华丽：晶簇 + 光晕（≥4 级 1 颗，≥7 级 2 颗，≥9 级加星芒） */
+      if (tier >= 4) {
+        const gems = tier >= 9 ? 3 : tier >= 7 ? 2 : 1;
+        const gx0 = w / 2, gy = pad + 1;
+        for (let i = 0; i < gems; i++) {
+          const gx = gx0 + (i - (gems - 1) / 2) * 7;
+          x.globalAlpha = 0.28; CIRC(x, gx, gy, 4 + (tier >= 7 ? 1 : 0), color);    // 光晕
+          x.globalAlpha = 1;
+          const d = CIRC;                                                          // 菱形晶体
+          x.fillStyle = shade(color, 40);
+          x.beginPath(); x.moveTo(gx, gy - 4); x.lineTo(gx + 3, gy); x.lineTo(gx, gy + 4); x.lineTo(gx - 3, gy); x.closePath(); x.fill();
+          R(x, gx - 1, gy - 2, 1, 1, '#ffffff');
+          void d;
+        }
+        if (tier >= 9) {                                                           // 星辉及以上：十字星芒
+          x.strokeStyle = color; x.lineWidth = 1; x.globalAlpha = 0.8;
+          x.beginPath();
+          x.moveTo(gx0 - 7, pad + 1); x.lineTo(gx0 + 7, pad + 1);
+          x.moveTo(gx0, pad - 5); x.lineTo(gx0, pad + 7);
+          x.stroke(); x.globalAlpha = 1;
+        }
+      }
+      /* 画布因描边/晶簇外扩：记录偏移与原尺寸，绘制时对齐回原位置（不影响占地与遮挡） */
+      o.c._ox = pad; o.c._oy = pad; o.c._baseW = base.width; o.c._baseH = base.height;
+      return o.c;
+    });
+  },
 
   /* ==================== 地形 ==================== */
   /* 地形贴图统一按 TILE_PX（32px）绘制：早期 16px 只填满格子左上角，地表显得粗糙断裂 */
