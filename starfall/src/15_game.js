@@ -217,6 +217,7 @@ class Game {
     } else {
       this.home.update(dt);
     }
+    this.updateAmbient(dt);                        // 环境粒子（雪 / 沙 / 落叶 / 萤火）
     // 实体
     for (let i = this.monsters.length - 1; i >= 0; i--) {
       const m = this.monsters[i];
@@ -897,6 +898,7 @@ class Game {
     }
     this.drawFloats(ctx);
     ctx.restore();
+    this.drawAmbient(ctx);             // 环境粒子（屏幕空间，落在角色之前）
     this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
     this.drawVignette(ctx);
     if (!this.inHome) this.drawMinimap();
@@ -922,6 +924,14 @@ class Game {
     const night = clamp(1 - Math.abs(ph - 0.75) / 0.22, 0, 1);
     const dusk = clamp(1 - Math.abs(ph - 0.52) / 0.16, 0, 1);
     const dawn = clamp(1 - Math.min(Math.abs(ph - 0.02), Math.abs(ph - 0.98)) / 0.10, 0, 1);
+    /* 时段切换提示（中英）：黎明 / 白昼 / 黄昏 / 夜晚 */
+    let phase = 'day';
+    if (night > 0.5) phase = 'night'; else if (dusk > 0.5) phase = 'dusk'; else if (dawn > 0.5) phase = 'dawn';
+    if (this._dayPhase && this._dayPhase !== phase && typeof UI !== 'undefined' && UI.toast) {
+      UI.toast({ dawn: '黎明 · Dawn', day: '天亮了 · Daytime', dusk: '黄昏 · Dusk', night: '入夜了 · Night' }[phase],
+        phase === 'night' ? '#8fa8ff' : '#ffd76a');
+    }
+    this._dayPhase = phase;
     if (night > 0.01) { ctx.fillStyle = 'rgba(26,34,78,' + (night * 0.30).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
     if (dusk > 0.01) { ctx.fillStyle = 'rgba(255,146,70,' + (dusk * 0.13).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
     if (dawn > 0.01) { ctx.fillStyle = 'rgba(255,190,140,' + (dawn * 0.10).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
@@ -949,6 +959,73 @@ class Game {
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
   }
+  /* ---------- 环境粒子：雪 / 沙 / 落叶 / 萤火 / 花瓣（按大区自动切换） ---------- */
+  ambientKind() {
+    const r = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
+    switch (r && r.key) {
+      case 'snow': return 'snow';
+      case 'desert': case 'waste': return 'sand';
+      case 'forest': return 'leaf';
+      case 'abyss': case 'ruin': return 'spark';
+      case 'sea': return 'spray';
+      default: return 'petal';
+    }
+  }
+  updateAmbient(dt) {
+    if (this.inHome) return;
+    const p = this.player, cam = this.cam;
+    const kind = this.ambientKind();
+    if (this._ambKind !== kind) { this._ambKind = kind; this.ambient = []; }
+    if (!this.ambient) this.ambient = [];
+    const want = (typeof Mobile !== 'undefined' && Mobile.on) ? 38 : 64;
+    const r = regionAtTile(Math.floor(p.x / TILE_PX), Math.floor(p.y / TILE_PX));
+    const pal = (r && r.pal) || null;
+    while (this.ambient.length < want) {
+      this.ambient.push({
+        x: cam.x + rnd(0, cam.w), y: cam.y + rnd(0, cam.h),
+        vx: rnd(-10, 10), vy: 0, s: rnd(1, 2.6), ph: rnd(0, 6.28)
+      });
+    }
+    const cfg = {
+      snow: { vy: 26, col: '#ffffff', a: .75, sway: 14 },
+      sand: { vy: 8, col: '#e8c98a', a: .45, sway: 46 },
+      leaf: { vy: 22, col: (pal && pal.tree && pal.tree.leaf) || '#6fa04a', a: .60, sway: 20 },
+      spark: { vy: -8, col: (pal && pal.flower && pal.flower[0]) || '#a45cff', a: .55, sway: 10 },
+      spray: { vy: -14, col: '#dff2ff', a: .40, sway: 18 },
+      petal: { vy: 18, col: (pal && pal.flower && pal.flower[0]) || '#ffc0d8', a: .55, sway: 16 }
+    }[kind];
+    for (const q of this.ambient) {
+      q.ph += dt * 1.7;
+      q.y += cfg.vy * dt;
+      q.x += (cfg.vx || 0) * dt + Math.sin(q.ph) * cfg.sway * dt;
+      /* 飘出视野就绕回另一侧，保持恒定密度 */
+      if (q.y > cam.y + cam.h + 8) { q.y = cam.y - 8; q.x = cam.x + rnd(0, cam.w); }
+      if (q.y < cam.y - 8) { q.y = cam.y + cam.h + 8; q.x = cam.x + rnd(0, cam.w); }
+      if (q.x > cam.x + cam.w + 8) q.x = cam.x - 8;
+      if (q.x < cam.x - 8) q.x = cam.x + cam.w + 8;
+    }
+    void cfg.vx;
+  }
+  drawAmbient(ctx) {
+    if (this.inHome || !this.ambient || !this.ambient.length) return;
+    const cam = this.cam, kind = this.ambientKind();
+    const r = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
+    const pal = (r && r.pal) || null;
+    const col = {
+      snow: '#ffffff', sand: '#e8c98a', leaf: (pal && pal.tree && pal.tree.leaf) || '#6fa04a',
+      spark: (pal && pal.flower && pal.flower[0]) || '#a45cff', spray: '#dff2ff',
+      petal: (pal && pal.flower && pal.flower[0]) || '#ffc0d8'
+    }[kind];
+    const a = { snow: .75, sand: .45, leaf: .60, spark: .55, spray: .40, petal: .55 }[kind] || .5;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    for (const q of this.ambient) {
+      const sx = q.x - cam.x, sy = q.y - cam.y;
+      if (sx < -6 || sy < -6 || sx > cam.w + 6 || sy > cam.h + 6) continue;
+      ctx.fillRect(sx, sy, q.s, q.s);
+    }
+    ctx.restore();
+  }
+
   drawPlayer(ctx, p) {
     const sp = Sprites.player(p.clsKey);
     const frames = sp[p.face] || sp.down;
