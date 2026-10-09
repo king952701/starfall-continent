@@ -17,6 +17,8 @@ class Game {
     this.task = null; this.hover = null;   // 批量采集任务 / 当前悬停资源点
     this.route = null;                     // 自动导航目标
     this.boat = null;                      // 正在驾驶的船
+    this.proj = [];                        // 飞行中的投射物（箭 / 法球 / 怪物弹）
+    this.hitStop = 0;                      // 命中顿帧剩余时间（打击感）
     this._board = null; this._disembark = null;   // 上船 / 下船补间动画
     this._wakeT = 0;                       // 航行尾迹计时
     this.spawnT = 0; this.saveT = 0; this.miniCached = false;
@@ -40,9 +42,20 @@ class Game {
     const w = Math.min(window.innerWidth, 1920), h = Math.min(window.innerHeight, 1080);
     /* 画质档位：画布像素 = CSS 尺寸 × 倍率（低 0.6 / 中 0.8 / 高 1 / 4K 1.6），再由 CSS 拉伸铺满 */
     const s = (typeof Settings !== 'undefined' && Settings.qScale) ? Settings.qScale() : 1;
-    this.cv.width = Math.max(320, Math.round(w * s));
-    this.cv.height = Math.max(240, Math.round(h * s));
+    /* 设备像素比：此前高 DPI 屏（手机 2~3x / 4K 显示器）只是把低分辨率画布用 CSS 拉大 → 发糊。
+     * 这里按 (dpr-1)×0.6 折中补清晰度（全量按物理像素会让移动端填充率爆炸），并做总像素封顶。 */
+    const mobile = (typeof Mobile !== 'undefined' && Mobile.on);
+    const cap = (typeof Settings !== 'undefined') ? (+Settings.data.dprCap || 2) : 2;
+    const dpr = Math.min(window.devicePixelRatio || 1, cap);
+    const eff = s < 1 ? 1 : 1 + (dpr - 1) * 0.6;      // 低画质档不再放大：优先帧率
+    let pw = Math.round(w * s * eff), ph = Math.round(h * s * eff);
+    const capW = mobile ? 1920 : 2560, capH = mobile ? 1080 : 1440;
+    const over = Math.max(pw / capW, ph / capH);
+    if (over > 1) { pw = Math.round(pw / over); ph = Math.round(ph / over); }
+    this.cv.width = Math.max(320, pw);
+    this.cv.height = Math.max(240, ph);
     this.cam.w = w; this.cam.h = h;
+    this.dprEff = eff;
   }
   start() { requestAnimationFrame(t => this.loop(t)); }
   loop(ts) {
@@ -222,6 +235,11 @@ class Game {
   update(dt) {
     const p = this.player;
     this.timeSec += dt;
+    /* 命中顿帧（打击感）：暴击 / 击杀时世界推进放慢到 12%，特效与渲染照常 → "卡那一下" */
+    let wdt = dt;
+    if (this.hitStop > 0) { this.hitStop -= dt; wdt = dt * 0.12; }
+    /* BGM 场景同步（内部 0.5s 节流）：区域调式 / 战斗强度 / 昼夜 */
+    if (typeof Music !== 'undefined' && Music.syncFromGame) Music.syncFromGame(this, dt);
     // 玩家有操作（移动 / 按住攻击 / 摇杆）→ 重置「10 秒无操作自动关闭面板」计时
     if (typeof UI !== 'undefined' && UI.touch) {
       const k = this.keys;
@@ -231,8 +249,8 @@ class Game {
     const z = this.cam.zoom || 1;
     this.mouse.worldX = this.cam.x + this.mouse.x / z; this.mouse.worldY = this.cam.y + this.mouse.y / z;
     p.aimAngle = angleOf(p.x, p.y - 8, this.mouse.worldX, this.mouse.worldY);
-    if (!p.dead) { this.updateBoard(dt) || this.movePlayer(dt); }
-    p.update(dt, this);
+    if (!p.dead) { this.updateBoard(wdt) || this.movePlayer(wdt); }
+    p.update(wdt, this);
     // 摄像机跟随（可视世界范围 = 屏幕尺寸 / 缩放，保证主角始终居中）
     const vw = this.cam.w / z, vh = this.cam.h / z;
     const cx = p.x - vw / 2, cy = p.y - vh / 2;
@@ -244,7 +262,8 @@ class Game {
       this.spawnT -= dt;
       /* 天气影响刷怪节奏：雷暴时怪物更活跃 */
       const smul = (typeof Weather !== 'undefined' && Weather.spawnMul) ? Weather.spawnMul() : 1;
-      if (this.spawnT <= 0) { this.spawnT = 1.2 / Math.max(0.2, smul); this.updateSpawns(); }
+      const si = (typeof BAL !== 'undefined') ? BAL.spawn.interval : 1.2;
+      if (this.spawnT <= 0) { this.spawnT = si / Math.max(0.2, smul); this.updateSpawns(); }
     } else {
       this.home.update(dt);
     }
@@ -254,7 +273,7 @@ class Game {
     // 实体
     for (let i = this.monsters.length - 1; i >= 0; i--) {
       const m = this.monsters[i];
-      if (!this.inHome) m.update(dt, this);
+      if (!this.inHome) m.update(wdt, this);
       if (m.dead) {
         if (Date.now() - m.deadT > 3000) this.monsters.splice(i, 1);
       } else if (!this.inHome && dist(m.x, m.y, p.x, p.y) > 64 * TILE_PX) this.monsters.splice(i, 1);
@@ -269,8 +288,24 @@ class Game {
     UI.tickOverview(dt);
     this._nodeTick = (this._nodeTick || 0) + dt;
     if (this._nodeTick > 0.25) { this._nodeTick = 0; if (UI._nodeNd) UI.refreshNode(); }
+    /* 迷雾：走出一片揭一片（0.4s 一次，半径 14 格 ≈ 半屏多） */
+    this._explT = (this._explT || 0) + dt;
+    if (this._explT > 0.4) {
+      this._explT = 0;
+      if (!this.inHome) this.markExplored(Math.floor(p.x / TILE_PX), Math.floor(p.y / TILE_PX), 14);
+    }
     // 特效 / 飘字
-    for (let i = this.fx.length - 1; i >= 0; i--) { this.fx[i].ttl -= dt; if (this.fx[i].ttl <= 0) this.fx.splice(i, 1); }
+    /* 特效：粒子（spark）受重力与阻尼，其余只减 ttl */
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i]; f.ttl -= dt;
+      if (f.type === 'spark') {
+        f.x += (f.vx || 0) * dt; f.y += (f.vy || 0) * dt;
+        f.vy = (f.vy || 0) + (f.g === undefined ? 260 : f.g) * dt;
+        f.vx = (f.vx || 0) * 0.97;
+      }
+      if (f.ttl <= 0) this.fx.splice(i, 1);
+    }
+    this.updateProj(dt);
     for (let i = this.floats.length - 1; i >= 0; i--) {
       const f = this.floats[i]; f.t -= dt; f.y -= dt * 26; if (f.t <= 0) this.floats.splice(i, 1);
     }
@@ -389,6 +424,7 @@ class Game {
     if (this.route) this.cancelRoute('上船已取消导航');
     if (this.task) this.stopTask('上船中断了自动采集');
     p.boarding = true;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('board');    // 上船水花
     this._board = { t: 0, dur: 0.5, fx: p.x, fy: p.y, boat: o };
     this.fx.push({ x: o.wx, y: o.wy, r: 20, ttl: .5, color: '#cfe8ff', type: 'circle' });
   }
@@ -409,6 +445,7 @@ class Game {
     if (!best) { UI.toast('离岸太远，无法下船', '#ff9a9a'); return; }
     if (this.task) this.stopTask('下船中断了自动采集');
     p.disembarking = true;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('board');    // 下船水花
     this._disembark = { t: 0, dur: 0.45, fx: p.x, fy: p.y,
       tx2: best.x * TILE_PX + TILE_PX / 2, ty2: best.y * TILE_PX + TILE_PX / 2 };
     this.fx.push({ x: o.wx, y: o.wy, r: 18, ttl: .5, color: '#cfe8ff', type: 'circle' });
@@ -498,6 +535,33 @@ class Game {
       }
     }
   }
+  /** NPC 走路帧 + 篝火跳动：动态件不进区块烘焙，这里逐帧画（与 drawBoats 同一套坐标约定） */
+  drawNpcs(ctx, view) {
+    const CS = CHUNK * TILE_PX;
+    const c0x = Math.floor(view.x / CS) - 1, c1x = Math.floor((view.x + view.w) / CS) + 1;
+    const c0y = Math.floor(view.y / CS) - 1, c1y = Math.floor((view.y + view.h) / CS) + 1;
+    for (let cy = c0y; cy <= c1y; cy++) {
+      for (let cx = c0x; cx <= c1x; cx++) {
+        const ch = this.world.chunks.get(cx + ',' + cy);
+        if (!ch) continue;
+        for (const o of ch.objs) {
+          const wx = (cx * CHUNK + o.lx) * TILE_PX + 16 + (o.ox || 0);
+          const wy = (cy * CHUNK + o.ly) * TILE_PX + TILE_PX - 2 + (o.oy || 0);
+          if (wx < view.x - 48 || wx > view.x + view.w + 48 || wy < view.y - 48 || wy > view.y + view.h + 48) continue;
+          if (o.kind === 'npc') {
+            const f = Math.floor(this.timeSec * 2 + (o.npcSeed || 0) * 0.37) % 4;   // 各自相位错开
+            this.drawShadow(ctx, wx, wy, 8, 4);
+            const sp = Sprites.npc(o.npcSeed || 1, o.data, f);
+            ctx.drawImage(sp, Math.round(wx - sp.width / 2), Math.round(wy - sp.height + 2));
+          } else if (o.kind === 'prop' && o.data === 'campfire') {
+            const f = Math.floor(this.timeSec * 6 + (o.lx * 3 + o.ly)) % 3;
+            const sp = Sprites.campfire(f);
+            ctx.drawImage(sp, Math.round(wx - 16), Math.round(wy - sp.height + 2));
+          }
+        }
+      }
+    }
+  }
   talkNpc(o) {
     const lines = {
       guard: ['这片大陆不太平，出门记得带药水。', '往北越过森林就是更好的猎场。', '小心夜里出现的精英怪。'],
@@ -511,6 +575,7 @@ class Game {
     const now = Date.now();
     if (o.opened && now - o.opened < 120000) { UI.toast('宝箱已空', '#ff9a9a'); return; }
     o.opened = now;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('chest');
     const ch = this.world.chunks.get((tx >> 4) + ',' + (ty >> 4));
     if (ch) ch.canvas = null;
     const p = this.player;
@@ -800,6 +865,10 @@ class Game {
     }
     this.world.takeNode(nd, 1);
     this.fx.push({ x: nd.tx * TILE_PX + 16, y: nd.ty * TILE_PX + 16, r: 40, ttl: .3, color: '#cfe8b8', type: 'circle' });
+    /* 采集音按材质区分：矿=金属叮、木=闷响、草=沙沙；批量采集（quiet）不播，避免刷屏 */
+    if (typeof Snd !== 'undefined' && Snd.play && !g.quiet) {
+      Snd.play(skill === 'mine' ? 'mine' : skill === 'log' ? 'chop' : 'herb');
+    }
     let n = 1;
     if (chance(0.05 + p.stats.gatherPct / 200)) n++;
     if (chance(p.stats.doubleGather / 100)) { n *= 2; if (!g.quiet) UI.toast('双倍产出！', '#9fd06a'); }
@@ -823,6 +892,7 @@ class Game {
     const list = pool.length ? pool : Object.values(ITEMS).filter(i => i.sub === 'fish');
     const f = weightedPick(list, i => Math.max(1, 12 - i.qbase * 1.4));
     const q = rollFishQuality(f);
+    if (typeof Snd !== 'undefined' && Snd.play && !nd._quiet) Snd.play('fish');   // 水花 + 低频闷响
     const left = p.addItem(f.id, 1, q);
     if (left) UI.toast('背包已满', '#ff9a9a');
     else if (!nd._quiet) {
@@ -882,6 +952,7 @@ class Game {
         if (outQ > (cs.best || 0)) { cs.best = outQ; cs.bestName = outName; }
         p.addLifeExp(r.skill, Math.round(r.req * 1.2 + 4));
         p.stat.crafts++;
+        if (typeof Snd !== 'undefined' && Snd.play) Snd.play('craft');
       } else {
         fail++;
         UI.log('制作失败，材料损失', '#ff9a9a');
@@ -1029,7 +1100,10 @@ class Game {
     UI.log('抵达 ' + r.name + '：' + r.desc, '#9fe8ff');
     Ach.check(this);
   }
-  teleportTo(x, y) { this.player.x = x; this.player.y = y; this.inHome = false; }
+  teleportTo(x, y) {
+    this.player.x = x; this.player.y = y; this.inHome = false;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('portal');
+  }
 
   /* ================= 视野缩放 ================= */
   /** 可视世界范围（世界像素），随缩放变化 */
@@ -1083,6 +1157,8 @@ class Game {
     if (typeof Weather !== 'undefined') Weather.drawGround(ctx, this);   // 云影 / 积雪 / 湿滑地面（世界层）
     this.drawObjectShadows(ctx);                  // 太阳投影：树 / 石 / 矿 / 草
     if (!this.inHome) this.drawBoats(ctx, view);  // 水域小船（含驾驶中的船）
+    if (!this.inHome) this.drawNpcs(ctx, view);   // NPC 走路帧 + 篝火跳动
+    if (!this.inHome) this.drawProj(ctx);   // 飞行中的箭 / 法球（在特效之下、实体之上）
     this.drawFx(ctx);
     // 鼠标悬停的资源点高亮
     if (this.hover) {
@@ -1127,6 +1203,7 @@ class Game {
     this.drawAmbient(ctx);             // 环境粒子（屏幕空间，落在角色之前）
     this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
     if (typeof Weather !== 'undefined') Weather.drawSky(ctx, this);   // 雨丝 / 雪花 / 阵风 / 闪电（最上层）
+    this.applyPostFx(ctx);                            // 泛光 + 区域色调映射（可关，移动端默认关）
     this.drawVignette(ctx);
     if (!this.inHome) this.drawMinimap();
     if (this.interactHint) {
@@ -1347,10 +1424,15 @@ class Game {
   }
 
   drawPlayer(ctx, p) {
-    const sp = Sprites.player(p.clsKey);
+    const sp = Sprites.player(p.clsKey, p.gearLook ? p.gearLook() : null);   // 装备影响外观
     const frames = sp[p.face] || sp.down;
     const sailing = !!p.sailing;
-    const idx = (p.moving && !sailing) ? (Math.floor(p.animT * 6) % 4) : 0;
+    /* 帧优先级：受击 7 > 攻击/施法 6 > 走路 0-3 > 待机呼吸 4-5 */
+    let idx;
+    if (p.hitT > 0) idx = 7;
+    else if (p.atkT > 0) idx = 6;
+    else if (p.moving && !sailing) idx = Math.floor(p.animT * 6) % 4;
+    else idx = 4 + (Math.floor(this.timeSec * 2) % 2);
     const cv = frames[idx];
     /* 坐船：随船起伏，坐姿（不播放走路帧、不画人影，船已有影子） */
     const bob = sailing ? Math.sin(this.timeSec * 2.2) * 1.4 : 0;
@@ -1371,7 +1453,8 @@ class Game {
   }
   drawMonster(ctx, m) {
     const frames = m.sprite.frames, size = m.size();
-    const f = Math.floor(this.timeSec * 3 + m.x) % 2;
+    /* 受击时抖一下（4 帧浮动，受击帧取最后一帧） */
+    const f = (m.hitT > 0) ? 3 : Math.floor(this.timeSec * 3 + m.x) % 4;
     const cv = frames[f];
     const wpx = 32 * clamp(size, 0.6, 3.2) * 1.4, hpx = wpx;
     const cx = Math.round(m.x - wpx / 2), cy = Math.round(m.y - hpx + 12);
@@ -1398,10 +1481,97 @@ class Game {
       ctx.beginPath(); ctx.ellipse(m.x, m.y + 4, wpx * 0.4, hpx * 0.18, 0, 0, 6.28); ctx.stroke();
     }
   }
+  /* ================= 打击感：粒子 / 投射物 / 顿帧 ================= */
+  /** 粒子爆发：命中火花、击杀碎片、水花、升级星屑 */
+  burst(x, y, n, col, opt) {
+    if (typeof Settings !== 'undefined' && Settings.data.quality === 'low') n = Math.ceil(n / 2);
+    const o = opt || {}, life = o.life || 0.45;
+    const cap = (typeof Mobile !== 'undefined' && Mobile.on) ? 90 : 160;
+    if (this.fx.length > cap) n = Math.min(n, 6);              // 特效堆积时自动收敛，保帧率
+    for (let i = 0; i < n; i++) {
+      const a = o.ang === undefined ? Math.random() * 6.283 : o.ang + (Math.random() - 0.5) * (o.spread || 1.2);
+      const sp = (o.spd || 130) * (0.5 + Math.random());
+      this.fx.push({
+        x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - (o.up || 0),
+        r: (o.r || 3) * (0.6 + Math.random() * 0.8), ttl: life * (0.6 + Math.random() * 0.6), life: life,
+        color: Array.isArray(col) ? col[Math.floor(Math.random() * col.length)] : col,
+        g: o.g === undefined ? 260 : o.g, type: 'spark'
+      });
+    }
+  }
+  /** 发射投射物：飞行命中才结算伤害（弓 / 法球 / 怪物弹） */
+  spawnProj(o) {
+    const spd = o.spd || 420;
+    this.proj.push({
+      x: o.x, y: o.y, px: o.x, py: o.y,
+      vx: Math.cos(o.ang) * spd, vy: Math.sin(o.ang) * spd,
+      r: o.r || 4, owner: o.owner, opts: o.opts || {}, col: o.col || '#ffd76a',
+      kind: o.kind || 'orb', ttl: (o.range || 400) / spd + 0.15, cb: o.cb || null,
+      dmgT: 0, pierce: o.pierce || 0, hit: null, spin: Math.random() * 6.28
+    });
+  }
+  updateProj(dt) {
+    const p = this.player;
+    for (let i = this.proj.length - 1; i >= 0; i--) {
+      const b = this.proj[i];
+      b.px = b.x; b.py = b.y;
+      b.x += b.vx * dt; b.y += b.vy * dt; b.ttl -= dt; b.spin += dt * 12;
+      let done = b.ttl <= 0;
+      if (!done) {
+        /* 命中判定：玩家发射 → 打怪；怪物发射 → 打玩家 */
+        const list = (b.owner && b.owner.isPlayer) ? this.monsters : [p];
+        for (const t of list) {
+          if (!t || t.dead || (b.owner && t === b.owner)) continue;
+          if (dist(b.x, b.y, t.x, t.y - 8) > (b.r + 10)) continue;
+          /* 有回调走回调（保留多段 / 减益等技能逻辑），否则直接结算伤害 */
+          if (b.cb) b.cb(t); else Combat.dealDamage(b.owner || p, t, b.opts, this);
+          this.burst(b.x, b.y, 8, b.col, { spd: 150, life: .3, r: 2.5 });
+          if (b.pierce > 0) { b.pierce--; } else { done = true; }
+          break;
+        }
+      }
+      /* 撞墙 / 撞树：直接消散 */
+      if (!done && this.world && this.world.solidTile(Math.floor(b.x / TILE_PX), Math.floor(b.y / TILE_PX))) {
+        this.burst(b.x, b.y, 5, b.col, { spd: 90, life: .25, r: 2 });
+        done = true;
+      }
+      if (done) this.proj.splice(i, 1);
+    }
+  }
+  drawProj(ctx) {
+    for (const b of this.proj) {
+      ctx.save();
+      ctx.translate(Math.round(b.x), Math.round(b.y));
+      ctx.rotate(Math.atan2(b.vy, b.vx));
+      if (b.kind === 'arrow') {
+        ctx.strokeStyle = '#e8e8f0'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(6, 0); ctx.stroke();
+        ctx.fillStyle = b.col; ctx.beginPath();
+        ctx.moveTo(6, 0); ctx.lineTo(1, -3); ctx.lineTo(1, 3); ctx.closePath(); ctx.fill();
+      } else {
+        /* 法球：核心 + 旋转光晕 + 拖尾 */
+        ctx.globalAlpha = 0.35; ctx.fillStyle = b.col;
+        ctx.beginPath(); ctx.arc(0, 0, b.r * 2.2, 0, 6.28); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(0, 0, b.r, 0, 6.28); ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.globalAlpha = 0.5; ctx.strokeStyle = b.col; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, b.r * 1.6, b.spin, b.spin + 3.6); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  }
   drawFx(ctx) {
     for (const f of this.fx) {
-      const a = clamp(f.ttl / (f.type === 'circle' ? 0.5 : 0.3), 0, 1);
+      const a = clamp(f.ttl / (f.type === 'circle' ? 0.5 : (f.type === 'spark' ? (f.life || 0.5) : 0.3)), 0, 1);
       ctx.globalAlpha = a * 0.8;
+      if (f.type === 'spark') {
+        ctx.fillStyle = f.color;
+        const s = Math.max(1, f.r * a);
+        ctx.fillRect(f.x - s / 2, f.y - s / 2, s, s);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       if (f.type === 'circle') {
         ctx.strokeStyle = f.color; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (1.2 - a * 0.4), 0, 6.28); ctx.stroke();
@@ -1428,6 +1598,73 @@ class Game {
       ctx.fillStyle = f.color || '#fff'; ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  }
+  /* ================= 后处理：泛光 Bloom + 区域色调映射 =================
+   * 全部可关（设置里「泛光」：关 / 自动 / 开，「色调强度」0~0.15）；低画质档强制关；
+   * 连续偏慢（EMA 帧耗时 > 9ms）自动整体关闭，保证帧率优先 */
+  postFxStrength() {
+    if (typeof Settings === 'undefined') return 0;
+    const b = (Settings.data.bloom === undefined ? 2 : Settings.data.bloom);
+    if (b === 0) return 0;
+    if (typeof Mobile !== 'undefined' && Mobile.on && b === 2) return 0;   // 自动：移动端关
+    if (Settings.data.quality === 'low') return 0;
+    return Settings.data.quality === 'high' || Settings.data.quality === '4k' ? 0.60 : 0.35;
+  }
+  applyPostFx(ctx) {
+    if (this._fxOff) return;
+    const s = this.postFxStrength();
+    const tint = (typeof Settings !== 'undefined') ? (+Settings.data.tint || 0) : 0;
+    if (s <= 0 && tint <= 0) return;
+    const t0 = (typeof nowMs === 'function') ? nowMs() : Date.now();
+    try {
+      if (s > 0) this.bloom(ctx, this.cam.w, this.cam.h, s);
+      if (tint > 0) this.toneTint(ctx, this.cam.w, this.cam.h, tint);
+    } catch (e) { this._fxOff = true; return; }
+    const t1 = (typeof nowMs === 'function') ? nowMs() : Date.now();
+    this._fxMs = (this._fxMs || 0) * 0.9 + (t1 - t0) * 0.1;
+    if (this._fxMs > 9) this._fxOff = true;             // 持续偏慢 → 自动降级
+  }
+  /** 泛光：1/4 降采样 → 自乘压暗暗部（阈值近似）→ 4 向偏移模糊 → lighter 叠加 */
+  bloom(ctx, w, h, strength) {
+    const bw = Math.max(64, Math.round(w / 4)), bh = Math.max(48, Math.round(h / 4));
+    if (!this._blA || this._blA.width !== bw || this._blA.height !== bh) {
+      this._blA = CV(bw, bh).c; this._blB = CV(bw, bh).c;
+    }
+    const A = this._blA, B = this._blB;
+    const ax = A.getContext('2d'), bx = B.getContext('2d');
+    ax.globalCompositeOperation = 'source-over'; ax.globalAlpha = 1;
+    ax.clearRect(0, 0, bw, bh);
+    ax.drawImage(ctx.canvas, 0, 0, bw, bh);
+    ax.globalCompositeOperation = 'multiply';           // x²：暗部更暗、亮部保留 ≈ 阈值
+    ax.drawImage(A, 0, 0);
+    ax.globalCompositeOperation = 'source-over';
+    bx.globalCompositeOperation = 'source-over';
+    bx.clearRect(0, 0, bw, bh);
+    bx.globalAlpha = 0.25;
+    bx.drawImage(A, 1, 0); bx.drawImage(A, -1, 0); bx.drawImage(A, 0, 1); bx.drawImage(A, 0, -1);
+    bx.globalAlpha = 1;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = strength;
+    ctx.imageSmoothingEnabled = true;                   // 放大回屏幕时平滑，缩小保持像素风
+    ctx.drawImage(B, 0, 0, w, h);
+    ctx.restore();
+  }
+  /** 区域色调映射：soft-light 薄罩一层区域色，强度 0.06~0.15 之间（要克制） */
+  toneTint(ctx, w, h, a) {
+    let key = 'plain';
+    try {
+      const reg = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
+      if (reg && reg.key) key = reg.key;
+    } catch (e) { }
+    const COL = { plain: '#ffe9b0', forest: '#7fd06a', desert: '#ffb46a', snow: '#8fb6ff',
+      abyss: '#a06aff', ruin: '#7fe0d0', waste: '#c08a6a', sea: '#6ac0ff' };
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = a;
+    ctx.fillStyle = COL[key] || COL.plain;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   }
   drawVignette(ctx) {
     const w = this.cam.w, h = this.cam.h;
@@ -1472,8 +1709,58 @@ class Game {
         fish: this.home.fish, pending: this.home.pending
       },
       ach: Ach.serialize(), pos: { x: this.player.x, y: this.player.y, inHome: this.inHome },
-      idle: Idle.serialize(), market: Market.serialize()
+      idle: Idle.serialize(), market: Market.serialize(),
+      /* 迷雾：已探索位图（CELL 格一个 bit/byte，base64 压缩后约 190KB）。
+       * 旧档没有这个字段 → parseExplored 返回全 0，即「全未探索」，不丢档、不报错 */
+      explored: this.serializeExplored()
     };
+  }
+  /* ================= 迷雾（D2）：已探索区块 =================
+   * 粒度 EXPL_CELL 格/单元；仅主世界记录，家园不涉及。跨局持久化，旧档视为全未探索。 */
+  EXPL_CELL = 32;
+  initExplored() {
+    const n = Math.ceil(WORLD_SIZE / this.EXPL_CELL);
+    if (!this.explored || this.explored.length !== n * n) this.explored = new Uint8Array(n * n);
+    return this.explored;
+  }
+  /** 把玩家周围 r 格标记为已探索 */
+  markExplored(tx, ty, r) {
+    const e = this.initExplored(), C = this.EXPL_CELL, n = Math.ceil(WORLD_SIZE / C);
+    const c0x = Math.max(0, Math.floor((tx - r) / C)), c1x = Math.min(n - 1, Math.floor((tx + r) / C));
+    const c0y = Math.max(0, Math.floor((ty - r) / C)), c1y = Math.min(n - 1, Math.floor((ty + r) / C));
+    for (let cy = c0y; cy <= c1y; cy++) for (let cx = c0x; cx <= c1x; cx++) e[cy * n + cx] = 1;
+  }
+  /** 序列化：RLE 行程编码（未探索区连片 0，实测几百 KB → 几 KB） */
+  serializeExplored() {
+    const e = this.initExplored();
+    let s = '', i = 0;
+    while (i < e.length) {
+      const v = e[i] ? 1 : 0;
+      let run = 0;
+      while (i + run < e.length && run < 255 && ((e[i + run] ? 1 : 0) === v)) run++;
+      s += String.fromCharCode(v) + String.fromCharCode(run);
+      i += run;
+    }
+    return { c: this.EXPL_CELL, n: e.length, rle: 1, b: (typeof btoa === 'function') ? btoa(s) : null };
+  }
+  parseExplored(o) {
+    const n = Math.ceil(WORLD_SIZE / this.EXPL_CELL);
+    const e = new Uint8Array(n * n);
+    if (o && o.c === this.EXPL_CELL && typeof atob === 'function' && o.b) {
+      try {
+        const s = atob(o.b);
+        if (o.rle) {
+          let i = 0, k = 0;
+          while (i + 1 < s.length && k < e.length) {
+            const v = s.charCodeAt(i), run = s.charCodeAt(i + 1); i += 2;
+            for (let j = 0; j < run && k < e.length; j++, k++) e[k] = v ? 1 : 0;
+          }
+        } else {
+          for (let i = 0; i < Math.min(s.length, e.length); i++) e[i] = s.charCodeAt(i) ? 1 : 0;
+        }
+      } catch (err) { }
+    }
+    return e;
   }
   save(show) {
     try {
@@ -1505,6 +1792,7 @@ class Game {
       // 拍卖行与离线挂机
       Market.load(d.market);
       Idle.load(d.idle);
+      g.explored = g.parseExplored(d.explored || null);   // 旧档无此字段 → 全未探索（不丢档）
       if (Idle.running && Idle.startedAt) {
         const away = Math.floor((Date.now() - Idle.startedAt) / 1000);
         if (away >= 60 && Idle.queue.length) {

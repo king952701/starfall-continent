@@ -69,6 +69,20 @@ const Combat = {
       game && game.floatText(t, '免疫', '#cfd8e8'); return res;
     }
     if (res.miss) { game && game.floatText(t, 'MISS', '#8f9bc4'); a.combo = 0; t.onHit && t.onHit(a, 0, res); return res; }
+    if (t.hitT !== undefined) t.hitT = 0.2;                       // 受击帧（后仰 + 闪白 0.2s）
+    /* 音效：玩家打出去 = 命中 / 暴击；怪物打到玩家用略低音高区分（同名 45ms 节流） */
+    if (typeof Snd !== 'undefined' && Snd.play) {
+      if (a.isPlayer) Snd.play(res.crit ? 'crit' : 'hit');
+      else if (t.isPlayer) Snd.play('hit', { pitch: 0.85 });
+    }
+    /* 打击感：命中火花（暴击更多更亮）+ 暴击顿帧 60ms */
+    if (game && game.burst) {
+      const EC = { fire: '#ff7a2a', ice: '#9fe8ff', thunder: '#ffe36a', poison: '#7fd05a', dark: '#a45cff', stellar: '#5cf0ff', wind: '#cfe8b8', water: '#5ab0d0', earth: '#c9a24a' };
+      const col = res.crit ? ['#ffd76a', '#fff3c4', '#ff9a3a'] : [EC[(opts && opts.elem) || ''] || '#ffd76a', '#ffffff'];
+      game.burst(t.x, t.y - 10, res.crit ? 14 : 8, col, { spd: res.crit ? 190 : 130, life: 0.35, r: res.crit ? 3.5 : 2.5 });
+      const FB = (typeof BAL !== 'undefined') ? BAL.feel : { hitStopCrit: 0.06 };
+      if (res.crit) game.hitStop = Math.max(game.hitStop || 0, FB.hitStopCrit);
+    }
     // 连击累积
     a.combo = (a.combo || 0) + 1; a.comboT = COMBAT_CONST.COMBO_TIME;
     let final = res.dmg;
@@ -159,6 +173,11 @@ const Combat = {
       game && game.floatText(t, '坚韧！', '#ffd700'); return;
     }
     t.hp = 0; t.dead = true; t.deadT = Date.now();
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('die');
+    if (game && game.burst) {
+      game.burst(t.x, t.y - 10, 18, ['#ff6a6a', '#ffd76a', '#ffffff'], { spd: 210, life: 0.5, r: 3.5 });
+      game.hitStop = Math.max(game.hitStop || 0, (typeof BAL !== 'undefined') ? BAL.feel.hitStopKill : 0.09);   // 击杀顿帧更久
+    }
     if (game) {
       if (t.isMonster) game.onMonsterDeath(t, a); else game.onPlayerDeath && game.onPlayerDeath();
     }
@@ -200,6 +219,7 @@ const Combat = {
     const lv = caster.lv || 1;
     const info = skillMult(skill, lv);
     let targets = [];
+    const elemCol = { fire: '#ff7a2a', ice: '#9fe8ff', thunder: '#ffe36a', poison: '#7fd05a', dark: '#a45cff', stellar: '#5cf0ff', wind: '#cfe8b8', water: '#5ab0d0', earth: '#c9a24a' }[skill.elem] || '#ffd76a';
     if (skill.pattern === 'self') {
       if (skill.buffId) BuffSys.apply(caster, skill.buffId, game);
       if (skill.counter) { caster.counterT = 2.0; caster.counterMult = skill.mult; }
@@ -210,12 +230,19 @@ const Combat = {
       const list = caster.isPlayer ? game.monsters.filter(m => !m.dead) : [game.player];
       targets = list.filter(m => dist(m.x, m.y, caster.x, caster.y) <= (skill.radius || 2) * TILE_PX);
       caster.castTargets(targets, skill, info, game);
+    } else if (skill.pattern === 'line' && game && game.spawnProj) {
+      /* 直线技能 → 飞行法球：命中才结算（保留多段与减益：走 castTargets 回调） */
+      game.spawnProj({
+        x: caster.x, y: caster.y - 8, ang: caster.aimAngle, spd: 520, r: 5,
+        range: (skill.len || 6) * TILE_PX, owner: caster, kind: 'orb', col: elemCol,
+        cb: t => caster.castTargets([t], skill, info, game)
+      });
     } else {
       targets = this.targetsIn(game, caster, skill);
       caster.castTargets(targets, skill, info, game);
     }
     // 表现
-    const col = { fire: '#ff7a2a', ice: '#9fe8ff', thunder: '#ffe36a', poison: '#7fd05a', dark: '#a45cff', stellar: '#5cf0ff', wind: '#cfe8b8', water: '#5ab0d0', earth: '#c9a24a' }[skill.elem] || '#ffd76a';
+    const col = elemCol;
     if (skill.pattern === 'cone') game.fx.push({ x: caster.x, y: caster.y, ang: caster.aimAngle, r: (skill.radius || 3) * TILE_PX, arc: skill.arc || 1.2, ttl: .25, color: col, type: 'cone' });
     else if (skill.pattern === 'circle') game.fx.push({ x: caster.x, y: caster.y, r: (skill.radius || 3) * TILE_PX, ttl: .35, color: col, type: 'circle' });
     else if (skill.pattern === 'line') game.fx.push({ x: caster.x, y: caster.y, tx: caster.x + Math.cos(caster.aimAngle) * (skill.len || 6) * TILE_PX, ty: caster.y + Math.sin(caster.aimAngle) * (skill.len || 6) * TILE_PX, ttl: .3, color: col, type: 'beam' });

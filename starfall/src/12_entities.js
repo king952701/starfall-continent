@@ -4,8 +4,15 @@
  * ==========================================================*/
 'use strict';
 
-function expToNext(lv) { return Math.round(100 * Math.pow(lv, 1.8) * (1 + lv * 0.02)); }
-function lifeExpToNext(lv) { return Math.round(50 * Math.pow(lv, 1.5)); }
+/* 经验曲线取 BALANCE 总表（40_balance.js）；未加载时退化为等价硬编码值 */
+function expToNext(lv) {
+  if (typeof BAL !== 'undefined') return BAL.expToNext(lv);
+  return Math.round(100 * Math.pow(lv, 1.8) * (1 + lv * 0.02));
+}
+function lifeExpToNext(lv) {
+  if (typeof BAL !== 'undefined') return BAL.lifeExpToNext(lv);
+  return Math.round(50 * Math.pow(lv, 1.5));
+}
 
 class Entity {
   constructor(x, y) {
@@ -249,12 +256,36 @@ class Player extends Entity {
     const slot = ITEMS[it.id].slot;
     const prev = this.equip[slot];
     this.equip[slot] = it; this.bag[idx] = prev || null;
+    this._gl = null;                       // 装备变了 → 外观指纹失效
     this.recompute(); return true;
   }
   unequip(slot) {
     const it = this.equip[slot]; if (!it) return false;
     if (!this.addInstance(it)) return false;
-    this.equip[slot] = null; this.recompute(); return true;
+    this.equip[slot] = null; this._gl = null;
+    this.recompute(); return true;
+  }
+
+  /* ---------- 装备 → 外观（B3：装备影响外观） ----------
+   * 返回 { helm, body, pants, cloak, wep }，未装备部位为 null（外观自动退回职业配色 = 零回归）。
+   * 按装备指纹缓存，避免每帧重建对象。 */
+  gearLook() {
+    const eq = this.equip || {};
+    const sig = ['helmet', 'chest', 'legs', 'offhand', 'weapon']
+      .map(s => { const it = eq[s]; return it ? (it.id + ':' + (it.q || 0) + ':' + (it.enhance || 0)) : '0'; }).join('/');
+    if (this._gl && this._gl.hash === sig) return this._gl;
+    const col = it => { const d = ITEMS[it.id]; return (d && d.color) || '#8a8a9a'; };
+    const g = { hash: sig, helm: null, body: null, pants: null, cloak: null, wep: null };
+    if (eq.helmet) g.helm = { col: col(eq.helmet), tier: eq.helmet.q || 0 };
+    if (eq.chest) g.body = { col: col(eq.chest), tier: eq.chest.q || 0 };
+    if (eq.legs) g.pants = { col: col(eq.legs) };
+    if (eq.offhand) g.cloak = { col: col(eq.offhand) };          // 副手（盾/披挂）显示为背后披挂
+    if (eq.weapon) {
+      const d = ITEMS[eq.weapon.id] || {};
+      g.wep = { kind: d.grp || d.icon || 'sword', col: col(eq.weapon), glow: (eq.weapon.q || 0) >= 6 };
+    }
+    this._gl = g;
+    return g;
   }
 
   /* ---------- 经验 / 等级 ---------- */
@@ -268,6 +299,7 @@ class Player extends Entity {
     }
     if (up) {
       this.recompute(); this.hp = this.maxHp; this.mp = this.maxMp;
+      if (typeof Snd !== 'undefined' && Snd.play) Snd.play('level');   // 升级音（此前已定义但无人调用）
       game && game.toast('等级提升！ Lv.' + this.lv, '#ffd76a');
       game && game.fx.push({ x: this.x, y: this.y, r: 3 * TILE_PX, ttl: .8, color: '#ffd76a', type: 'circle' });
       game && Ach.check(game);
@@ -287,7 +319,20 @@ class Player extends Entity {
   basicAttack(game) {
     if (this.attackCd > 0 || this.isControlled()) return false;
     const c = this.cls.basic;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('swing');   // 挥砍起手
+    this.atkT = 0.45;                                                // 攻击帧
     this.attackCd = 1 / Math.max(0.3, this.stats.aspd);
+    /* 远程职业（弓 / 法杖）：普攻改为发射投射物，命中才结算（近战仍是即时扇形） */
+    const WEP = (this.cls.iconSpec && this.cls.iconSpec.wep) || 'sword';
+    if (this.isPlayer && game.spawnProj && (WEP === 'bow' || WEP === 'staff')) {
+      game.spawnProj({
+        x: this.x, y: this.y - 8, ang: this.aimAngle, spd: WEP === 'bow' ? 620 : 460, r: 4,
+        range: c.range * TILE_PX + 64, owner: this, kind: WEP === 'bow' ? 'arrow' : 'orb',
+        col: WEP === 'bow' ? '#e8e8f0' : '#9fe8ff',
+        opts: { mult: c.mult, magic: !!c.magic, elem: this.elemAttack() }
+      });
+      return true;
+    }
     const list = game.monsters.filter(m => !m.dead && dist(m.x, m.y, this.x, this.y) <= c.range * TILE_PX + 8);
     const inArc = list.filter(m => {
       const a = angleOf(this.x, this.y, m.x, m.y);
@@ -312,7 +357,13 @@ class Player extends Entity {
     if (this.isControlled()) return false;
     if (this.mp < sk.mp) { game.floatText(this, '魔力不足', '#7fcfff'); return false; }
     this.mp -= sk.mp;
+    this.atkT = 0.6;                                                 // 施法帧（比普攻慢）
     this.cds[sk.id] = skillCd(sk, this.lv, this.stats.cdr);
+    /* 施法音：按元素变调（火偏高、冰偏低、雷更高） */
+    if (typeof Snd !== 'undefined' && Snd.play) {
+      const EP = { fire: 1.08, ice: 0.90, frost: 0.90, thunder: 1.15, storm: 1.15, poison: 0.95, holy: 1.05, stellar: 1.0 };
+      Snd.play('cast', { pitch: EP[sk.elem] || 1 });
+    }
     Combat.cast(game, this, sk);
     game.fx.push({ x: this.x, y: this.y, r: 2 * TILE_PX, ttl: .2, color: '#9fe8ff', type: 'circle' });
     return true;
@@ -346,6 +397,9 @@ class Player extends Entity {
     this.stat.playSec += dt;
     if (this.dead) return;
     this.updateCommon(dt);
+    /* 动画状态计时：攻击 0.45s / 施法 0.6s / 受击 0.2s（驱动帧 6 / 7） */
+    if (this.atkT > 0) this.atkT -= dt;
+    if (this.hitT > 0) this.hitT -= dt;
     if (this.attackCd > 0) this.attackCd -= dt;
     if (this.dashCd > 0) this.dashCd -= dt;
     for (const k in this.cds) if (this.cds[k] > 0) this.cds[k] -= dt;

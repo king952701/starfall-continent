@@ -90,7 +90,7 @@ const Idle = {
   },
   gatherTime(skill) {
     const p = UI.game.player;
-    const base = { mine: 3.0, log: 2.2, herb: 2.0, bug: 2.5, fish: 6.0 }[skill] || 3;
+    const base = (typeof BAL !== 'undefined') ? BAL.gatherBase(skill) : ({ mine: 3.0, log: 2.2, herb: 2.0, bug: 2.5, fish: 6.0 }[skill] || 3);
     const life = p.life[skill];
     return Math.max(0.6, base / (1 + life.lv * 0.01 + this.toolBonus(skill) + (p.stats.gatherSpeed || 0) / 100));
   },

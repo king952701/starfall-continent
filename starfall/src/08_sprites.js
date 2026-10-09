@@ -29,9 +29,32 @@ function nodeQuality(req) {
 
 const Sprites = {
   _cache: {},
+  /* 缓存上限：超过时按最久未用淘汰（LRU），避免低端机长时间游玩后显存堆积。
+   * 命中会刷新 _u（访问序），淘汰时释放画布宽高 → 立刻归还内存。 */
+  _cap: 900,
+  _seq: 0,
   key(k, fn) {
-    if (!this._cache[k]) { const c = fn(); if (c && c.tagName === 'CANVAS') c._sk = k; this._cache[k] = c; }
+    if (!this._cache[k]) {
+      const c = fn();
+      if (c && c.tagName === 'CANVAS') c._sk = k;
+      this._cache[k] = c;
+      this._cache[k] && (this._cache[k]._u = ++this._seq);
+      this._evict();
+    } else if (this._cache[k] && this._cache[k]._u !== undefined) {
+      this._cache[k]._u = ++this._seq;
+    }
     return this._cache[k];
+  },
+  _evict() {
+    const ks = Object.keys(this._cache);
+    if (ks.length <= this._cap) return;
+    ks.sort((a, b) => (this._cache[a]._u || 0) - (this._cache[b]._u || 0));
+    const cut = Math.max(1, Math.floor(ks.length * 0.12));      // 一次淘汰 12%，别卡帧
+    for (let i = 0; i < cut; i++) {
+      const c = this._cache[ks[i]];
+      if (c && c.width) { c.width = 0; c.height = 0; }          // 释放画布内存
+      delete this._cache[ks[i]];
+    }
   },
   /* ---------- 资源点按等级着色：保留原模型轮廓，叠品质色 + 等级晶簇 ---------- */
   nodeTier(base, color, tier) {
@@ -400,86 +423,190 @@ const Sprites = {
       return o.c;
     });
   },
-  npc(seed, role) {
-    return this.key('npc' + seed + role, () => {
+  /* NPC：4 帧循环（0-1-2-3），frame 语义与角色一致
+   * 0 = 左脚前 / 1 = 过渡（身体最高） / 2 = 右脚前 / 3 = 过渡（身体最低）
+   * 逐帧动态绘制（不参与区块烘焙），站在原地也有呼吸与重心切换 */
+  npc(seed, role, frame) {
+    const f = ((frame | 0) % 4 + 4) % 4;
+    return this.key('npc' + seed + role + 'f' + f, () => {
       const o = CV(32, 48), x = o.x;
       const rr = mulberry32(seed);
       const skin = '#f0c8a0';
       const cloth = ['#4a5a8a', '#7a4a5a', '#3f6a4a', '#8a6a3a', '#5a4a7a'][Math.floor(rr() * 5)];
       const hair = ['#3a2a1a', '#7a6a3a', '#2a2a2a', '#a08a5a'][Math.floor(rr() * 4)];
-      R(x, 10, 30, 12, 16, cloth); R(x, 10, 44, 12, 2, shade(cloth, -30));
-      R(x, 8, 32, 3, 10, skin); R(x, 21, 32, 3, 10, skin);
-      R(x, 10, 16, 12, 14, skin);
-      R(x, 9, 12, 14, 6, hair); R(x, 9, 12, 14, 2, shade(hair, 20));
-      R(x, 12, 22, 2, 2, '#2a2a2a'); R(x, 18, 22, 2, 2, '#2a2a2a');
-      if (role === 'guard') { R(x, 24, 14, 2, 30, '#8a8a9a'); R(x, 22, 10, 6, 6, '#c0c8d8'); }
-      if (role === 'merchant') { R(x, 22, 34, 8, 8, '#8a6a3a'); }
-      if (role === 'elder') { R(x, 12, 26, 8, 2, '#dfe8f5'); }
+      const bob = (f === 1) ? -1 : (f === 3 ? 0 : 0);          // 重心起伏
+      const l1 = (f === 0) ? -1 : (f === 2 ? 1 : 0);            // 前脚
+      const l2 = -l1;
+      const y = bob;
+      R(x, 10, 30 + y, 12, 16, cloth); R(x, 10, 44, 12, 2, shade(cloth, -30));
+      /* 腿：交替前后（走路帧的关键） */
+      R(x, 11, 44, 4, 4 + l1, shade(cloth, -40));
+      R(x, 17, 44, 4, 4 + l2, shade(cloth, -40));
+      /* 臂：与腿反相摆动 */
+      R(x, 8, 32 + y - l2, 3, 10, skin);
+      R(x, 21, 32 + y - l1, 3, 10, skin);
+      R(x, 10, 16 + y, 12, 14, skin);
+      R(x, 9, 12 + y, 14, 6, hair); R(x, 9, 12 + y, 14, 2, shade(hair, 20));
+      R(x, 12, 22 + y, 2, 2, '#2a2a2a'); R(x, 18, 22 + y, 2, 2, '#2a2a2a');
+      if (role === 'guard') { R(x, 24, 14 + y + l1, 2, 30, '#8a8a9a'); R(x, 22, 10 + y + l1, 6, 6, '#c0c8d8'); }
+      if (role === 'merchant') { R(x, 22, 34 + y, 8, 8, '#8a6a3a'); }
+      if (role === 'elder') { R(x, 12, 26 + y, 8, 2, '#dfe8f5'); }
+      return o.c;
+    });
+  },
+  /* ---------- POI 装饰件（配合布局模板，避免每个营地长一样） ---------- */
+  campfire(frame) {
+    return this.key('campfire' + ((frame | 0) % 3), () => {
+      const o = CV(32, 32), x = o.x;
+      R(x, 5, 24, 5, 3, '#6a6a72'); R(x, 12, 26, 4, 3, '#5a5a62'); R(x, 19, 24, 5, 3, '#6a6a72');
+      R(x, 9, 21, 14, 3, '#4a3a22'); R(x, 8, 20, 16, 2, '#6a4a2a');
+      const f = ((frame | 0) % 3 + 3) % 3;
+      const h = f === 1 ? 12 : f === 2 ? 10 : 11;              // 火苗三帧跳动
+      R(x, 12, 20 - h, 8, h, '#ff9a2a');
+      R(x, 13, 22 - h, 6, h - 3, '#ffe08a');
+      R(x, 14, 19 - h, 4, 2, '#fff6c4');
+      return o.c;
+    });
+  },
+  well() {
+    return this.key('well', () => {
+      const o = CV(32, 32), x = o.x;
+      R(x, 6, 16, 20, 12, '#7a7a86'); R(x, 6, 16, 20, 3, '#9a9aa6');
+      R(x, 9, 19, 14, 6, '#2a2a38');
+      R(x, 7, 4, 2, 12, '#6a4a2a'); R(x, 23, 4, 2, 12, '#6a4a2a');
+      R(x, 5, 3, 22, 3, '#8a5a3a'); R(x, 5, 3, 22, 1, '#a87a4a');
+      R(x, 14, 8, 4, 6, '#5a5a6a');
+      return o.c;
+    });
+  },
+  totem() {
+    return this.key('totem', () => {
+      const o = CV(32, 48), x = o.x;
+      R(x, 11, 20, 10, 26, '#6a4a2a'); R(x, 11, 20, 10, 2, '#8a6a3a');
+      R(x, 8, 8, 16, 12, '#7a5a34'); R(x, 8, 8, 16, 2, '#a07a4a');
+      R(x, 11, 12, 3, 3, '#ffd76a'); R(x, 18, 12, 3, 3, '#ffd76a');
+      R(x, 12, 18, 8, 2, '#c94a4a');
+      R(x, 9, 34, 14, 3, '#5a3a22');
+      return o.c;
+    });
+  },
+  sign() {
+    return this.key('sign', () => {
+      const o = CV(32, 32), x = o.x;
+      R(x, 14, 14, 3, 16, '#6a4a2a');
+      R(x, 5, 8, 22, 9, '#8a6a3a'); R(x, 5, 8, 22, 2, '#a8865a');
+      R(x, 8, 11, 16, 1, '#4a3a22'); R(x, 8, 13, 11, 1, '#4a3a22');
       return o.c;
     });
   },
 
   /* ==================== 角色 ==================== */
   _charCanvas(w) { const o = CV(16, 24); return o; },
-  drawChar(x, look, dir, frame, wepType, scaled) {
+  /* 角色绘制
+   * frame 语义：0-3 走路 / 4-5 待机呼吸 / 6 攻击（武器挥出） / 7 受击（后仰 + 闪白）
+   * gear（可选）：{ helm, body, pants, cloak, wep } —— 已装备时覆盖职业配色；未传则完全等同旧外观
+   * 伪骨骼：腿 / 臂 / 武器按帧做关节位移与旋转，不引入真骨骼系统（16×24 像素不划算） */
+  drawChar(x, look, dir, frame, wepType, scaled, gear) {
     const s = scaled || 1;
     const P = (px, py, w, h, c) => { x.fillStyle = c; x.fillRect(px * s, py * s, w * s, h * s); };
-    const bob = (frame === 1 || frame === 3) ? 1 : 0;
+    const atk = frame === 6, hit = frame === 7;
+    const bob = (frame === 1 || frame === 3 || frame === 5) ? 1 : 0;
+    const hb = hit ? 1 : 0;                                   // 受击整体后仰 1px
+    const cloth = (gear && gear.body && gear.body.col) || look.cloth;
+    const trim = (gear && gear.body) ? shade(cloth, 24) : look.trim;
+    const pants = (gear && gear.pants && gear.pants.col) || look.pants;
+    const wepCol = (gear && gear.wep && gear.wep.col) || look.wep;
+    const wepKind = (gear && gear.wep && gear.wep.kind) || wepType;
+    const glow = !!(gear && gear.wep && gear.wep.glow);
+    // 腿关节（走路交替）
     let lo1 = 0, lo2 = 0;
     if (frame === 1) { lo1 = 1; lo2 = -1; } else if (frame === 3) { lo1 = -1; lo2 = 1; }
-    // 腿
-    P(5, 17 + lo1, 3, 6, look.pants); P(8, 17 + lo2, 3, 6, look.pants);
-    P(5, 22 + lo1, 3, 2, shade(look.pants, -25)); P(8, 22 + lo2, 3, 2, shade(look.pants, -25));
-    // 躯干
-    P(4, 9 + bob, 8, 9, look.cloth);
-    P(4, 9 + bob, 8, 1, look.trim); P(4, 13 + bob, 8, 1, shade(look.cloth, -22));
-    P(4, 15 + bob, 8, 2, look.trim);
-    // 手臂（挥动）
-    const ao = frame === 1 ? 1 : frame === 3 ? -1 : 0;
-    P(2, 10 + ao, 2, 7, look.cloth); P(12, 10 - ao, 2, 7, look.cloth);
-    P(2, 16 + ao, 2, 2, look.skin); P(12, 16 - ao, 2, 2, look.skin);
-    // 头
-    P(4, 2 + bob, 8, 7, look.skin);
-    if (dir === 'up') {
-      P(3, 1 + bob, 10, 6, look.hair);
-    } else {
-      P(3, 1 + bob, 10, 4, look.hair);
-      P(3, 4 + bob, 2, 3, look.hair); P(11, 4 + bob, 2, 3, look.hair);
-      if (dir === 'down') { P(6, 5 + bob, 1, 2, '#22232e'); P(9, 5 + bob, 1, 2, '#22232e'); }
-      else if (dir === 'right') { P(9, 5 + bob, 1, 2, '#22232e'); }
-      else { P(6, 5 + bob, 1, 2, '#22232e'); }
+    // 披风：躯干之后（最底层），走路时末端外扩
+    if (gear && gear.cloak) {
+      const sw = atk ? 1 : 0;
+      P(3 + sw, 9 + bob, 10, 11, gear.cloak.col);
+      P(3 + sw, 9 + bob, 10, 1, shade(gear.cloak.col, 26));
+      P(3 + sw, 19 + bob, 10, 1, shade(gear.cloak.col, -30));
     }
-    // 武器
-    const wy = 8 + bob;
-    if (wepType === 'sword') {
-      if (dir === 'left') { P(0, wy + 3, 6, 2, look.wep); P(3, wy, 2, 2, '#ffd76a'); }
-      else if (dir === 'right') { P(10, wy + 3, 6, 2, look.wep); P(9, wy, 2, 2, '#ffd76a'); }
-      else if (dir === 'up') { P(13, wy - 3, 2, 9, look.wep); P(13, wy + 5, 3, 2, '#ffd76a'); }
-      else { P(11, wy - 2, 2, 10, look.wep); P(10, wy + 6, 4, 2, '#ffd76a'); }
-    } else if (wepType === 'bow') {
-      const bx = dir === 'left' ? 1 : 13;
-      x.fillStyle = look.wep;
-      x.beginPath(); x.arc(bx * s + 1, (wy + 4) * s, 7 * s, -1.2, 1.2); x.lineWidth = 2 * s; x.strokeStyle = look.wep; x.stroke();
-      x.beginPath(); x.moveTo(bx * s + 1, (wy - 2) * s); x.lineTo(bx * s + 1, (wy + 10) * s); x.lineWidth = 1 * s; x.strokeStyle = '#e8e8f0'; x.stroke();
-    } else if (wepType === 'staff') {
-      const sx = dir === 'left' ? 1 : 12;
-      P(sx, wy - 4, 2, 14, '#6a4a2a');
-      CIRC(x, sx * s + 1 * s, (wy - 6) * s, 3 * s, look.wep);
-      CIRC(x, sx * s + 1 * s, (wy - 6) * s, 1.5 * s, '#ffffff');
-    } else if (wepType === 'dagger') {
-      const dx2 = dir === 'left' ? 1 : 12;
-      P(dx2, wy + 6, 4, 2, look.wep); P(dx2 + 3, wy + 5, 2, 2, '#ffd76a');
+    // 腿
+    P(5, 17 + lo1 + hb, 3, 6, pants); P(8, 17 + lo2 + hb, 3, 6, pants);
+    P(5, 22 + lo1 + hb, 3, 2, shade(pants, -25)); P(8, 22 + lo2 + hb, 3, 2, shade(pants, -25));
+    // 躯干
+    P(4, 9 + bob + hb, 8, 9, cloth);
+    P(4, 9 + bob + hb, 8, 1, trim); P(4, 13 + bob + hb, 8, 1, shade(cloth, -22));
+    P(4, 15 + bob + hb, 8, 2, trim);
+    // 手臂（挥动 / 攻击抬手 / 受击）
+    let ao = frame === 1 ? 1 : frame === 3 ? -1 : 0;
+    if (atk) ao = -2; else if (hit) ao = 1;
+    P(2, 10 + ao + hb, 2, 7, cloth); P(12, 10 - ao + hb, 2, 7, cloth);
+    P(2, 16 + ao + hb, 2, 2, look.skin); P(12, 16 - ao + hb, 2, 2, look.skin);
+    // 头
+    P(4, 2 + bob + hb, 8, 7, look.skin);
+    if (dir === 'up') {
+      P(3, 1 + bob + hb, 10, 6, look.hair);
+    } else {
+      P(3, 1 + bob + hb, 10, 4, look.hair);
+      P(3, 4 + bob + hb, 2, 3, look.hair); P(11, 4 + bob + hb, 2, 3, look.hair);
+      if (dir === 'down') { P(6, 5 + bob + hb, 1, 2, '#22232e'); P(9, 5 + bob + hb, 1, 2, '#22232e'); }
+      else if (dir === 'right') { P(9, 5 + bob + hb, 1, 2, '#22232e'); }
+      else { P(6, 5 + bob + hb, 1, 2, '#22232e'); }
+    }
+    // 头盔：只盖头顶，保留头发下缘 1px（避免"秃头"）
+    if (gear && gear.helm) {
+      const hc = gear.helm.col;
+      P(3, 1 + bob + hb, 10, 3, hc);
+      P(3, 3 + bob + hb, 10, 1, shade(hc, -26));
+      P(2, 3 + bob + hb, 2, 4, shade(hc, -12)); P(12, 3 + bob + hb, 2, 4, shade(hc, -12));
+      if (gear.helm.tier >= 6) P(6, 0 + bob + hb, 4, 1, '#ffd76a');   // 高品级盔脊
+    }
+    // 武器（攻击帧绕肩旋转挥出；高品级发光）
+    const wy = 8 + bob + hb;
+    const drawWep = () => {
+      if (glow) CIRC(x, (dir === 'left' ? 2 : 13) * s, (wy + 4) * s, 5 * s, 'rgba(255,215,106,.22)');
+      if (wepKind === 'sword' || wepKind === 'hammer') {
+        if (dir === 'left') { P(0, wy + 3, 6, 2, wepCol); P(3, wy, 2, 2, '#ffd76a'); }
+        else if (dir === 'right') { P(10, wy + 3, 6, 2, wepCol); P(9, wy, 2, 2, '#ffd76a'); }
+        else if (dir === 'up') { P(13, wy - 3, 2, 9, wepCol); P(13, wy + 5, 3, 2, '#ffd76a'); }
+        else { P(11, wy - 2, 2, 10, wepCol); P(10, wy + 6, 4, 2, '#ffd76a'); }
+      } else if (wepKind === 'bow') {
+        const bx = dir === 'left' ? 1 : 13;
+        x.beginPath(); x.arc(bx * s + 1, (wy + 4) * s, 7 * s, -1.2, 1.2); x.lineWidth = 2 * s; x.strokeStyle = wepCol; x.stroke();
+        x.beginPath(); x.moveTo(bx * s + 1, (wy - 2) * s); x.lineTo(bx * s + 1, (wy + 10) * s); x.lineWidth = 1 * s; x.strokeStyle = '#e8e8f0'; x.stroke();
+      } else if (wepKind === 'staff') {
+        const sx = dir === 'left' ? 1 : 12;
+        P(sx, wy - 4, 2, 14, '#6a4a2a');
+        CIRC(x, sx * s + 1 * s, (wy - 6) * s, 3 * s, wepCol);
+        CIRC(x, sx * s + 1 * s, (wy - 6) * s, 1.5 * s, '#ffffff');
+      } else if (wepKind === 'dagger') {
+        const dx2 = dir === 'left' ? 1 : 12;
+        P(dx2, wy + 6, 4, 2, wepCol); P(dx2 + 3, wy + 5, 2, 2, '#ffd76a');
+      }
+    };
+    if (atk) {
+      const px = (dir === 'left' ? 4 : 12) * s, py = (wy + 6) * s;
+      x.save();
+      x.translate(px, py); x.rotate((dir === 'left' ? 1 : -1) * 0.95); x.translate(-px, -py);
+      drawWep();
+      x.restore();
+    } else drawWep();
+    // 受击闪白
+    if (hit) {
+      x.globalAlpha = 0.5;
+      P(2, 1 + hb, 12, 22, '#ffffff');
+      x.globalAlpha = 1;
     }
   },
-  player(clsKey) {
-    return this.key('pl' + clsKey, () => {
+  /** 玩家精灵：4 方向 × 8 帧；gear 变化会换缓存键（未传 gear 时完全等同旧外观） */
+  player(clsKey, gear) {
+    const gh = (gear && gear.hash) ? '|' + gear.hash : '';
+    return this.key('pl' + clsKey + gh, () => {
       const look = CLASSES[clsKey].look, wep = CLASSES[clsKey].iconSpec.wep;
       const S = 2, out = {};
       ['down', 'up', 'left', 'right'].forEach(dir => {
         const arr = [];
-        for (let f = 0; f < 4; f++) {
+        for (let f = 0; f < 8; f++) {
           const o = CV(16 * S, 24 * S);
-          this.drawChar(o.x, look, dir, f, wep, S);
+          this.drawChar(o.x, look, dir, f, wep, S, gear || null);
           arr.push(o.c);
         }
         out[dir] = arr;
@@ -502,9 +629,9 @@ const Sprites = {
   monster(tpl) {
     return this.key('mo' + tpl.name, () => {
       const S = 24, frames = [];
-      for (let f = 0; f < 2; f++) {
+      for (let f = 0; f < 4; f++) {          // 2 帧 → 4 帧：浮动更顺（0↑ 1↓ 2↓ 3↑）
         const o = CV(S, S), x = o.x;
-        const b = f ? 1 : 0;
+        const b = [0, 1, 2, 1][f] || 0;
         const c1 = tpl.c1, c2 = tpl.c2, eye = tpl.eye || '#ffe36a';
         const ground = 22;
         switch (tpl.shape) {

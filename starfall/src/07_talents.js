@@ -67,4 +67,7 @@ function talentsOf(tree) { return TALENTS.filter(t => t.tree === tree); }
 /** 天赋点上限 = 等级 */
 function talentPointsOf(level) { return level; }
 /** 重置费用：1000 → 5000 → 20000 …递增 */
-function respecCost(times) { return [1000, 5000, 20000, 50000, 100000][Math.min(times, 4)]; }
+function respecCost(times) {
+  const t = (typeof BAL !== 'undefined' && BAL.eco && BAL.eco.respec) ? BAL.eco.respec : [1000, 5000, 20000, 50000, 100000];
+  return t[Math.min(times, t.length - 1)];
+}

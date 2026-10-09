@@ -6,25 +6,32 @@
 
 const T_NODE_RESPAWN = 90000; // 采集点刷新 90 秒
 
+/* POI 布局模板：按坐标哈希取用 → 村落 / 哨站 / 集市 / 废墟 / 湖畔营地各不相同
+ * 每个模板至少 1 个工作台（保证制作功能可达），房屋与 NPC 数量随规模缩放 */
+const POI_LAYOUTS = [
+  { key: 'village', name: '村落', houses: 4, benches: ['forge', 'alchemy', 'cooking', 'tailor', 'wood'], npcs: ['guard', 'merchant', 'elder', 'merchant'], props: [['well', 3, 2], ['campfire', -3, -2]] },
+  { key: 'outpost', name: '哨站', houses: 1, benches: ['forge', 'wood'], npcs: ['guard', 'guard'], props: [['totem', 4, 2], ['sign', -4, 0]] },
+  { key: 'market', name: '集市', houses: 2, benches: ['alchemy', 'cooking', 'tailor'], npcs: ['merchant', 'merchant', 'elder'], props: [['sign', 2, 3], ['well', -3, 2]] },
+  { key: 'ruin', name: '废墟营地', houses: 0, benches: ['forge', 'alchemy'], npcs: ['elder', 'guard'], props: [['campfire', 0, 3], ['totem', -5, 1], ['well', 5, -1]] },
+  { key: 'harbor', name: '湖畔营地', houses: 1, benches: ['cooking', 'wood', 'tailor'], npcs: ['merchant', 'guard'], props: [['campfire', -2, 3], ['sign', 3, -2]] }
+];
 class WorldSite {
-  /** 村落 / 营地：一次性生成建筑清单 */
+  /** 村落 / 营地：一次性生成建筑清单（布局按坐标哈希从模板里挑） */
   constructor(tx, ty, scale, seed, isVillage) {
     this.tx = tx; this.ty = ty; this.items = [];
     const objs = this.items;
     const rr = mulberry32(seed);
+    const L = POI_LAYOUTS[Math.floor(hash2(tx, ty, seed + 555) * POI_LAYOUTS.length) % POI_LAYOUTS.length];
+    this.layout = L.key; this.layoutName = L.name;
     objs.push({ dx: 0, dy: 0, kind: 'portal' });
-    ['forge', 'alchemy', 'cooking', 'tailor', 'wood'].forEach((s, i) => {
-      objs.push({ dx: 4 + i * 2, dy: -1, kind: 'bench', data: s });
-    });
-    const benches = isVillage ? 4 : 1;
-    for (let i = 0; i < benches; i++) {
-      objs.push({ dx: -4 + i * 3, dy: 3, kind: 'house', w: 3, h: 2, data: i });
-    }
-    for (let i = 0; i < (isVillage ? 4 : 2); i++) {
-      objs.push({ dx: -6 + rr() * 12, dy: -6 + rr() * 12, kind: 'npc', data: choice(['guard', 'merchant', 'elder']) });
-    }
+    L.benches.forEach((s, i) => objs.push({ dx: 4 + i * 2, dy: -1, kind: 'bench', data: s }));
+    const houses = isVillage ? Math.max(2, L.houses) : Math.min(1, L.houses);
+    for (let i = 0; i < houses; i++) objs.push({ dx: -4 + i * 3, dy: 3, kind: 'house', w: 3, h: 2, data: i });
+    const npcN = isVillage ? L.npcs.length : Math.min(2, L.npcs.length);
+    for (let i = 0; i < npcN; i++) objs.push({ dx: -5 + rr() * 10, dy: -5 + rr() * 10, kind: 'npc', data: L.npcs[i] });
+    (L.props || []).forEach(pr => objs.push({ dx: pr[1], dy: pr[2], kind: 'prop', data: pr[0] }));
     objs.push({ dx: 6, dy: 2, kind: 'chest' });
-    objs.push({ dx: -7, dy: 2, kind: 'chest' });
+    if (isVillage) objs.push({ dx: -7, dy: 2, kind: 'chest' });
   }
 }
 
@@ -125,7 +132,18 @@ class World {
         } else if (it.kind === 'portal') {
           ch.objs.push({ lx: lx, ly: ly, kind: 'portal', sp: Sprites.portal(), ox: -8, oy: 0, solid: false });
         } else if (it.kind === 'npc') {
-          ch.objs.push({ lx: lx, ly: ly, kind: 'npc', data: it.data, sp: Sprites.npc((Math.abs(tx * 31 + ty * 17)) % 999, it.data), ox: 0, oy: 0, solid: false });
+          /* NPC 逐帧动态绘制（走路帧），不烘焙进区块 */
+          ch.objs.push({
+            lx: lx, ly: ly, kind: 'npc', data: it.data, ox: 0, oy: 0, solid: false,
+            npcSeed: (Math.abs(tx * 31 + ty * 17)) % 999
+          });
+        } else if (it.kind === 'prop') {
+          const solid = it.data === 'well' || it.data === 'totem';
+          ch.objs.push({
+            lx: lx, ly: ly, kind: 'prop', data: it.data, ox: -(it.data === 'totem' ? 0 : 0), oy: 0, solid: solid,
+            sp: it.data === 'well' ? Sprites.well() : it.data === 'totem' ? Sprites.totem() : it.data === 'campfire' ? Sprites.campfire(0) : Sprites.sign()
+          });
+          if (solid) this._setSolid(ch, lx, ly, 1);
         } else if (it.kind === 'chest') {
           ch.objs.push({ lx: lx, ly: ly, kind: 'chest', sp: Sprites.chest('#ffd76a'), ox: 0, oy: 0, solid: false, opened: 0 });
         }
@@ -401,7 +419,9 @@ class World {
     for (const ob of ch.objs) {
       if (ob.node && ob.node.amount <= 0) continue;      // 已采尽：不绘制
       if (ob.kind === 'chest' && ob.opened) continue;
-      if (ob.kind === 'boat') continue;                  // 小船动态绘制（会移动 + 摇晃），不参与静态烘焙
+      /* 动态件不烘焙：小船（移动+摇晃）/ NPC（走路帧）/ 篝火（火焰跳动） */
+      if (ob.kind === 'boat' || ob.kind === 'npc') continue;
+      if (ob.kind === 'prop' && ob.data === 'campfire') continue;
       /* 等级着色贴图外扩了边距：按 _ox/_oy 与原尺寸对齐回格内原位 */
       const ox = ob.sp._ox || 0, oy = ob.sp._oy || 0;
       const bh = ob.sp._baseH || ob.sp.height;

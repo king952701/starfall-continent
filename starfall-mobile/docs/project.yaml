@@ -1,0 +1,37 @@
+# 星落大陆 · 工作室配置（ccgs-game-studio）
+project:
+  name: 星落大陆（Starfall Continent）
+  engine: web                 # HTML5 + Canvas2D + DOM 面板，无构建工具，script 顺序加载
+  packaging: cordova-android  # starfall-mobile/ → APK
+  repo: king952701/starfall-continent
+  stage: polish               # 7 阶段：Concept→Systems→Technical→PrePro→Production→Polish→Release
+
+paths:
+  code_root: starfall/src          # 28 个 JS，全局作用域，按 index.html 顺序引入
+  asset_root: starfall/assets      # tiles/（CC0 Kenney）+ boat/（CC0 Kenney）
+  style: starfall/css/style.css
+  entry: starfall/index.html
+  mobile: starfall-mobile          # Cordova 工程；docs/ 只在这里，不进 www
+  docs: starfall-mobile/docs
+
+modes:
+  rigor: standard        # 设计文档齐 → 才动代码
+  automation: autonomous # 连续推进到出包；仅删除 / 范围变更 / 存档 schema 变更时停
+
+# 本次优化范围（用户选定四项）
+scope:
+  - audio      # 音效 0→1 + 程序化 BGM
+  - visual     # DPR / 泛光色调映射 / 装备外观 / 角色加帧
+  - juice      # 投射物 / 粒子 / 命中顿帧 / 伪骨骼 / 天赋树图
+  - content    # 大地图真实采样 / 迷雾 / POI / NPC 帧 / balance.js
+
+gates:
+  - 设计文档齐：美术圣经 / 音频设计 / UX 规格 / 数值迁移各一份
+  - 每个 Story 有验收清单，视觉类有截图或无头用例证据
+  - 全部完成后出 APK，run 链接与包内自检留证
+
+quality_bar:
+  - 像素风主路径不得被破坏（imageSmoothingEnabled=false + CSS pixelated）
+  - 移动端填充率与音源数量必须有上限（泛光默认关、音效并发 ≤12）
+  - 公共函数签名改动（如 Sprites.drawChar）需同步所有调用方与缓存键
+  - 存档结构改动必须显式批准并记录

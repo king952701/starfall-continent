@@ -356,7 +356,8 @@ const UI = {
     if (parts.length) html += '<div class="td">取材：' + parts.map(d => this.tipMark(d.id) + ' ' + Math.round(d.p * 100) + '%').join('　') + '</div>';
     const drops = t.drop || [];
     if (drops.length) {
-      const mul = DROP_TIER_MUL[m.tier] || 0.35;
+      const mul = (typeof BAL !== 'undefined' && BAL.eco && BAL.eco.dropTierMul && BAL.eco.dropTierMul[m.tier] !== undefined)
+        ? BAL.eco.dropTierMul[m.tier] : (DROP_TIER_MUL[m.tier] || 0.35);
       html += '<div class="td">专属掉落：' + drops.map(d => this.tipMark(d.id) + ' ' + Math.round(d.p * mul * 100) + '%').join('　') + '</div>';
     }
     html += '<div class="mini">普通怪物模板掉落按 35% 概率生效，精英 70%，BOSS 100%</div>';
@@ -648,7 +649,7 @@ const UI = {
     head.appendChild(el('span', 'crTitle', '致 谢 / Credits'));
     const closer = el('span', 'pclose', '✕ 关闭');
     closer.title = '关闭';
-    closer.onclick = () => { mask.style.display = 'none'; this.touch && this.touch(); };
+    closer.onclick = () => { if (typeof Snd !== 'undefined' && Snd.play) Snd.play('close'); mask.style.display = 'none'; this.touch && this.touch(); };
     head.appendChild(closer);
     box.appendChild(head);
 
@@ -724,7 +725,7 @@ const UI = {
     p.appendChild(t); p.appendChild(b);
     this.elRoot.appendChild(p);
     const closer = t.querySelector('.pclose');
-    closer.onclick = () => { p.style.display = 'none'; };
+    closer.onclick = () => { if (typeof Snd !== 'undefined' && Snd.play) Snd.play('close'); p.style.display = 'none'; };
     closer.onmousedown = e => e.stopPropagation();   // 避免点关闭时触发拖动
     // 拖动
     let drag = null;
@@ -733,6 +734,7 @@ const UI = {
     window.addEventListener('mousemove', e => { if (drag) { p.style.left = (e.clientX - drag.x) + 'px'; p.style.top = (e.clientY - drag.y) + 'px'; } });
     const obj = { el: p, body: b, title: t, _ow: w, _oh: h };
     this.panels[name] = obj;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('open');   // 面板打开
     if (p._ow === undefined) { p._ow = w; p._oh = h; }   // DOM 上保留原始尺寸供 fitPanel 使用
     /* 面板内容由各 open*() 同步填充 → 下一帧统一挂载分隔条（含嵌套），
      * 这样所有面板无需逐个改代码，只需在模板上标 data-sp / data-sp-key */
@@ -1138,37 +1140,197 @@ const UI = {
   },
 
   /* ---------- 天赋 ---------- */
+  /* ---------- 天赋树：Canvas 连线图（可缩放 / 可拖动） ---------- */
+  /** 布局：4 棵树各一列，节点按 tier 分层、同层横向排开 */
+  talentLayout() {
+    if (this._talentLayout) return this._talentLayout;
+    const CW = 240, RH = 76, GAP = 8, NH = 44;
+    const out = { nodes: [], byId: {}, w: 0, h: 0 };
+    let maxX = 0, maxY = 0;
+    TALENT_TREES.forEach((t, ti) => {
+      const byTier = {};
+      talentsOf(t.key).forEach(n => { (byTier[n.tier] = byTier[n.tier] || []).push(n); });
+      Object.keys(byTier).forEach(tier => {
+        const arr = byTier[tier];
+        const nw = (CW - 16 - (arr.length - 1) * GAP) / arr.length;   // 同层等分，绝不重叠
+        arr.forEach((n, k) => {
+          const x = ti * CW + 8 + k * (nw + GAP);
+          const y = 26 + (tier - 1) * RH;
+          const rec = { n: n, x: x, y: y, w: nw, h: NH, tree: ti };
+          out.nodes.push(rec); out.byId[n.id] = rec;
+          maxX = Math.max(maxX, x + nw); maxY = Math.max(maxY, y + NH);
+        });
+      });
+    });
+    out.w = maxX + 16; out.h = maxY + 16;
+    this._talentLayout = out;
+    return out;
+  },
+  drawTalentTree(ctx, cv, pl) {
+    const L = this.talentLayout(), v = this._tree;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.save();
+    ctx.translate(v.x, v.y); ctx.scale(v.s, v.s);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    /* 树标题 */
+    TALENT_TREES.forEach((t, ti) => {
+      ctx.fillStyle = '#7fe8ff'; ctx.font = 'bold 15px "Georgia",serif';
+      ctx.fillText(t.icon + ' ' + t.name, ti * 240 + 14, 16);
+    });
+    /* 连线：前置达成 = 金色，未达成 = 灰 */
+    ctx.lineWidth = 2;
+    for (const rec of L.nodes) {
+      const n = rec.n; if (!n.pre) continue;
+      const pr = L.byId[n.pre.id]; if (!pr) continue;
+      const ok = pl.talentLevel(n.pre.id) >= n.pre.lv;
+      ctx.strokeStyle = ok ? '#ffd76a' : '#39405a';
+      ctx.beginPath();
+      ctx.moveTo(pr.x + pr.w / 2, pr.y + pr.h);
+      ctx.lineTo(pr.x + pr.w / 2, pr.y + pr.h + 8);
+      ctx.lineTo(rec.x + rec.w / 2, rec.y - 8);
+      ctx.lineTo(rec.x + rec.w / 2, rec.y);
+      ctx.stroke();
+    }
+    /* 节点 */
+    for (const rec of L.nodes) {
+      const n = rec.n, l = pl.talentLevel(n.id);
+      const preOk = !n.pre || pl.talentLevel(n.pre.id) >= n.pre.lv;
+      let fill = '#22283c', edge = '#3f4866';
+      if (l >= n.max) { fill = '#4a3c14'; edge = '#ffd76a'; }
+      else if (l > 0) { fill = '#1e3a2c'; edge = '#7fd06a'; }
+      else if (preOk) { fill = '#1c2c44'; edge = '#7fe8ff'; }
+      ctx.fillStyle = fill; ctx.strokeStyle = edge; ctx.lineWidth = l >= n.max ? 2 : 1.4;
+      const r = 8;
+      ctx.beginPath();
+      ctx.moveTo(rec.x + r, rec.y);
+      ctx.arcTo(rec.x + rec.w, rec.y, rec.x + rec.w, rec.y + rec.h, r);
+      ctx.arcTo(rec.x + rec.w, rec.y + rec.h, rec.x, rec.y + rec.h, r);
+      ctx.arcTo(rec.x, rec.y + rec.h, rec.x, rec.y, r);
+      ctx.arcTo(rec.x, rec.y, rec.x + rec.w, rec.y, r);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = preOk ? '#e8eef8' : '#8b93a8';
+      ctx.font = '13px "Georgia",serif';
+      ctx.fillText(n.name, rec.x + 8, rec.y + 18);
+      ctx.fillStyle = l >= n.max ? '#ffd76a' : (l > 0 ? '#7fd06a' : '#8b93a8');
+      ctx.font = '12px "Georgia",serif';
+      ctx.fillText(l + '/' + n.max + '　' + n.cost + '点', rec.x + 8, rec.y + 34);
+    }
+    ctx.restore();
+  },
+  /** 命中测试：屏幕坐标 → 节点（已考虑平移与缩放） */
+  talentHit(cv, mx, my) {
+    const L = this.talentLayout(), v = this._tree;
+    const wx = (mx - v.x) / v.s, wy = (my - v.y) / v.s;
+    for (const rec of L.nodes) {
+      if (wx >= rec.x && wx <= rec.x + rec.w && wy >= rec.y && wy <= rec.y + rec.h) return rec.n;
+    }
+    return null;
+  },
   openTalent() {
-    const p = this.panel('talent', '天赋树', 720, 520, 340, 40);
+    const p = this.panel('talent', '天赋树', 760, 560, 320, 30);
     const pl = this.game.player;
     p.body.innerHTML = '';
     const head = el('div', 'mini', '可用天赋点：<b style="color:#ffd76a">' + (pl.talentTotal() - pl.talentSpent()) + '</b> / ' + pl.talentTotal() +
       '　（重置消耗 ' + fmt(respecCost(pl.respecTimes)) + ' 金）');
     p.body.appendChild(head);
+    /* 缩放 / 复位（手机没有滚轮，给按钮） */
+    this._tree = this._tree || { s: 1, x: 0, y: 0 };
+    const zbar = el('div', 'setBtns');
+    const zbtn = (txt, fn, gold) => { const b = el('button', 'btn' + (gold ? ' gold' : ''), txt); b.onclick = fn; zbar.appendChild(b); return b; };
+    /* 复位 = 自适应：整棵树刚好铺满画布 */
+    const fit = () => {
+      const LL = this.talentLayout();
+      this._tree.s = Math.max(0.6, Math.min(1, cv.width / LL.w, cv.height / LL.h));
+      this._tree.x = (cv.width - LL.w * this._tree.s) / 2;
+      this._tree.y = (cv.height - LL.h * this._tree.s) / 2;
+      redraw();
+    };
+    /* 首次打开时自适应（此时 cv 与 redraw 已就绪） */
+    zbtn('放大 +', () => { this._tree.s = Math.min(2, this._tree.s * 1.2); redraw(); });
+    zbtn('缩小 −', () => { this._tree.s = Math.max(0.6, this._tree.s / 1.2); redraw(); });
+    zbtn('复位', fit, true);
+    p.body.appendChild(zbar);
+
     const wrap = el('div', 'treeWrap');
-    TALENT_TREES.forEach(t => {
-      const col = el('div', 'tCol');
-      col.appendChild(el('h4', '', t.icon + ' ' + t.name));
-      talentsOf(t.key).forEach(n => {
-        const l = pl.talentLevel(n.id);
-        const preOk = !n.pre || pl.talentLevel(n.pre.id) >= n.pre.lv;
-        const d = el('div', 'tNode' + (l >= n.max ? ' max' : '') + (!preOk ? ' lock' : ''),
-          '<span class="n">' + n.name + '</span><span class="p">' + l + '/' + n.max + '</span><div class="d">' + n.desc + '</div>');
-        d.onmouseenter = e => this.tipTalent(n, pl, e.clientX, e.clientY);
-        d.onmousemove = e => this.tipTalent(n, pl, e.clientX, e.clientY);
-        d.onmouseleave = () => this.tipHide('talent');
-        d.onclick = () => {
-          if (!preOk) { this.toast('前置未达成', '#ff9a9a'); return; }
-          if (pl.talentSpent() + n.cost > pl.talentTotal()) { this.toast('天赋点不足', '#ff9a9a'); return; }
-          if (l >= n.max) return;
-          pl.talents[n.id] = l + 1; pl.recompute();
-          this.openTalent(); if (this.panels.char) this.refreshChar();
-        };
-        col.appendChild(d);
-      });
-      wrap.appendChild(col);
-    });
+    const cv = el('canvas');
+    cv.width = 700; cv.height = 430;
+    cv.style.cssText = 'display:block;background:rgba(8,10,18,.55);border:1px solid rgba(255,255,255,.08);' +
+      'border-radius:10px;cursor:grab;touch-action:none;max-width:100%';
+    wrap.appendChild(cv);
     p.body.appendChild(wrap);
+
+    const redraw = () => { const x = cv.getContext('2d'); if (x) this.drawTalentTree(x, cv, pl); };
+    /* 拖动平移 + 点击加点 + 悬浮详情 + 滚轮缩放 */
+    let drag = null;
+    const local = e => {
+      const r = cv.getBoundingClientRect();
+      const sx = cv.width / Math.max(1, r.width), sy = cv.height / Math.max(1, r.height);
+      return { mx: (e.clientX - r.left) * sx, my: (e.clientY - r.top) * sy };
+    };
+    cv.onmousedown = e => { drag = { mx: local(e).mx, my: local(e).my, vx: this._tree.x, vy: this._tree.y, moved: false }; };
+    cv.onmousemove = e => {
+      const l = local(e);
+      if (drag) {
+        const dx = l.mx - drag.mx, dy = l.my - drag.my;
+        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+        this._tree.x = drag.vx + dx; this._tree.y = drag.vy + dy; redraw();
+      }
+      const n = this.talentHit(cv, l.mx, l.my);
+      if (n) this.tipTalent(n, pl, e.clientX, e.clientY); else this.tipHide('talent');
+    };
+    cv.onmouseup = e => {
+      if (drag && !drag.moved) {
+        const n = this.talentHit(cv, local(e).mx, local(e).my);
+        if (n) addPoint(n);
+      }
+      drag = null;
+    };
+    cv.onmouseleave = () => { drag = null; this.tipHide('talent'); };
+    cv.onwheel = e => {
+      e.preventDefault();
+      const l = local(e), k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const ns = Math.max(0.6, Math.min(2, this._tree.s * k));
+      const r = ns / this._tree.s;
+      this._tree.x = l.mx - (l.mx - this._tree.x) * r;   // 以光标为锚点缩放
+      this._tree.y = l.my - (l.my - this._tree.y) * r;
+      this._tree.s = ns; redraw();
+    };
+    /* 触摸：单指拖动、轻点加点 */
+    cv.ontouchstart = e => {
+      const t = e.touches && e.touches[0]; if (!t) return;
+      drag = { mx: t.clientX, my: t.clientY, vx: this._tree.x, vy: this._tree.y, moved: false };
+    };
+    cv.ontouchmove = e => {
+      const t = e.touches && e.touches[0]; if (!t || !drag) return;
+      const dx = t.clientX - drag.mx, dy = t.clientY - drag.my;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      this._tree.x = drag.vx + dx; this._tree.y = drag.vy + dy; redraw();
+      if (e.preventDefault) e.preventDefault();
+    };
+    cv.ontouchend = e => {
+      if (drag && !drag.moved) {
+        const t = (e.changedTouches && e.changedTouches[0]) || null;
+        if (t) {
+          const r = cv.getBoundingClientRect();
+          const sx = cv.width / Math.max(1, r.width), sy = cv.height / Math.max(1, r.height);
+          const n = this.talentHit(cv, (t.clientX - r.left) * sx, (t.clientY - r.top) * sy);
+          if (n) addPoint(n);
+        }
+      }
+      drag = null;
+    };
+    function addPoint(n) {
+      const l = pl.talentLevel(n.id);
+      const preOk = !n.pre || pl.talentLevel(n.pre.id) >= n.pre.lv;
+      if (!preOk) { UI.toast('前置未达成', '#ff9a9a'); return; }
+      if (pl.talentSpent() + n.cost > pl.talentTotal()) { UI.toast('天赋点不足', '#ff9a9a'); return; }
+      if (l >= n.max) return;
+      pl.talents[n.id] = l + 1; pl.recompute();
+      if (typeof Snd !== 'undefined' && Snd.play) Snd.play('ok');
+      UI.openTalent(); if (UI.panels.char) UI.refreshChar();
+    }
+    redraw();
+    if (!this._tree.fitted) { this._tree.fitted = 1; fit(); }   // 首次打开自适应铺满
     const b = el('button', 'btn', '重置天赋');
     b.onclick = () => {
       const cost = respecCost(pl.respecTimes);
@@ -1218,6 +1380,86 @@ const UI = {
   },
 
   /* ---------- 世界地图 / 传送 ---------- */
+  /* ---------- 数值调试面板（BALANCE 总表） ----------
+   * 每行一个数值：− / + 按 10% 步进调节，改动立刻写回各系统常量，复位回到出厂值。
+   * 面板里改的是运行期副本，不写存档 → 试完关掉面板即恢复默认。 */
+  openBalance() {
+    if (typeof BAL === 'undefined') { this.toast('数值总表未加载', '#ff9a9a'); return; }
+    const p = this.panel('balance', '数值调试 · BALANCE', 620, 520, 200, 40);
+    p.body.innerHTML = '';
+    p.body.appendChild(el('div', 'mini', '− / + 按当前值的 10% 步进；改动即时生效，不写存档。'));
+    const groups = [
+      ['combat', '战斗', { reductionCap: '减伤上限', penCap: '穿透上限', comboStep: '连击每层', comboMax: '连击上限', comboTime: '连击保持(s)' }],
+      ['exp', '经验', { base: '升级基数', pow: '升级指数', lin: '线性项', lifeBase: '生活基数', lifePow: '生活指数' }],
+      ['gather', '采集耗时(s)', { mine: '采矿', log: '伐木', herb: '采药', bug: '捕虫', fish: '钓鱼' }],
+      ['spawn', '刷怪', { interval: '刷新间隔(s)' }],
+      ['feel', '打击感', { hitStopCrit: '暴击顿帧(s)', hitStopKill: '击杀顿帧(s)', slowRate: '顿帧推进倍率' }]
+    ];
+    groups.forEach(gr => {
+      p.body.appendChild(el('div', 'setSec', gr[1]));
+      Object.keys(gr[2]).forEach(k => {
+        const r = el('div', 'setRow');
+        r.appendChild(el('span', 'setLab', gr[2][k]));
+        const val = el('span', 'setVal', (+BAL[gr[0]][k]).toFixed(3));
+        const step = () => Math.abs(BAL[gr[0]][k]) * 0.1 || 0.05;
+        const mk = (txt, mul) => {
+          const b = el('button', 'btn', txt);
+          b.onclick = () => {
+            BAL[gr[0]][k] = Math.max(0, BAL[gr[0]][k] + mul * step());
+            BAL.apply(); val.textContent = (+BAL[gr[0]][k]).toFixed(3);
+            Snd && Snd.play && Snd.play('click');
+            this.toast(gr[2][k] + ' → ' + (+BAL[gr[0]][k]).toFixed(3), '#7fe8ff');
+          };
+          return b;
+        };
+        r.appendChild(mk('−', -1)); r.appendChild(val); r.appendChild(mk('+', 1));
+        p.body.appendChild(r);
+      });
+    });
+    const rst = el('button', 'btn gold', '全部复位');
+    rst.onclick = () => { BAL.reset(); this.openBalance(); this.toast('数值已复位', '#ffd76a'); };
+    p.body.appendChild(rst);
+  },
+
+  /* ---------- 大地图：真实地形采样 + 迷雾 ---------- */
+  /** 采样整块大陆的真实地形（每像素 = STEP 格），生成一次后缓存 */
+  buildMapImg() {
+    const S = 500, STEP = Math.ceil(WORLD_SIZE / S);
+    if (this._mapImg && this._mapStep === STEP) return this._mapImg;
+    const o = CV(S, S), x = o.x;
+    const w = this.game.world;
+    for (let py = 0; py < S; py++) {
+      for (let px = 0; px < S; px++) {
+        const tx = px * STEP, ty = py * STEP;
+        const info = w.tileInfo(tx, ty);
+        let c;
+        if (info.water) {
+          c = info.wkind === 'ocean' ? '#12365e' : info.wkind === 'lake' ? '#1c5b8a'
+            : info.wkind === 'stream' ? '#2a7fa8' : info.wkind === 'swamp' ? '#2f4a3a' : '#16486c';
+        } else if (info.mountain) c = '#4a4a55';
+        else {
+          const reg = regionAtTile(tx, ty);
+          c = (reg && reg.pal && reg.pal.ground && reg.pal.ground[0]) || '#3a5a3a';
+          if (info.sand) c = '#c9b078';
+        }
+        x.fillStyle = c; x.fillRect(px, py, 1, 1);
+      }
+    }
+    this._mapImg = o.c; this._mapStep = STEP;
+    return o.c;
+  },
+  /** 迷雾蒙版：未探索单元压暗（按 EXPL_CELL 粒度） */
+  buildFogImg() {
+    const g = this.game; if (!g || !g.explored) return null;
+    const n = Math.round(Math.sqrt(g.explored.length));
+    const o = CV(n, n), x = o.x;
+    for (let i = 0; i < g.explored.length; i++) {
+      if (g.explored[i]) continue;
+      const px = i % n, py = (i / n) | 0;
+      x.fillStyle = 'rgba(5,7,15,.82)'; x.fillRect(px, py, 1, 1);
+    }
+    return o.c;
+  },
   openMap() {
     const p = this.panel('map', '大陆地图 · 传送', 700, 520, 300, 40);
     p.body.innerHTML = '';
@@ -1231,12 +1473,17 @@ const UI = {
     const x = cv.getContext('2d');
     const scale = 480 / WORLD_SIZE;
     x.fillStyle = '#05070f'; x.fillRect(0, 0, 480, 480);
+    /* D1：真实地形采样（此前只画 8 个矩形，与实际地形不符）→ 首次生成后缓存 */
+    x.imageSmoothingEnabled = false;
+    x.drawImage(this.buildMapImg(), 0, 0, 480, 480);
+    /* 区域名称与边界叠在上面（半透明，不遮地形） */
     REGIONS.forEach(r => {
-      x.fillStyle = r.pal.ground[0];
-      x.fillRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
-      x.strokeStyle = 'rgba(255,215,106,.25)'; x.strokeRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
+      x.strokeStyle = 'rgba(255,215,106,.25)'; x.lineWidth = 1;
+      x.strokeRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
+      x.fillStyle = 'rgba(0,0,0,.45)';
+      x.fillRect(r.x0 * scale + 3, r.y0 * scale + 3, 62, 15);
       x.fillStyle = '#fff'; x.font = '11px sans-serif';
-      x.fillText(r.name, r.x0 * scale + 6, r.y0 * scale + 16);
+      x.fillText(r.name, r.x0 * scale + 6, r.y0 * scale + 14);
     });
     const pl = this.game.player;
     REGIONS.forEach(r => {
@@ -1248,6 +1495,9 @@ const UI = {
       };
       side.appendChild(d);
     });
+    /* D2 迷雾：未探索区域压暗（已探索位图 → 灰度蒙版） */
+    const fog = this.buildFogImg();
+    if (fog) x.drawImage(fog, 0, 0, 480, 480);
     // 玩家位置
     const drawMark = () => {
       x.fillStyle = '#ff3a5a';
@@ -1978,6 +2228,7 @@ const UI = {
   sellItem(idx, n) {
     const p = this.game.player, it = p.bag[idx];
     if (!it) return;
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('sell');
     const unit = Math.max(1, Math.round(itemPrice(it) * 0.7));
     const cnt = Math.min(n || (it.n || 1), it.type === 'gear' ? 1 : (it.n || 1));
     const gain = unit * cnt;
