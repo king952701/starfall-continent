@@ -85,6 +85,11 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #tooltip .s{color:#9fe8b8}
 #tooltip .sp{color:#ffcf6a}
 #tooltip .eff{color:#d7a8ff}
+/* 触屏端提示框：没有 mouseleave，加「✕ 关闭」按钮（否则提示框会一直留在屏幕上） */
+#tooltip .tipClose{position:absolute;right:4px;top:4px;pointer-events:auto;cursor:pointer;
+  font-size:11px;line-height:1;color:#ffd76a;background:#1b2545;border:1px solid #2b3557;
+  border-radius:12px;padding:4px 9px}
+body.mobile #tooltip{width:min(80vw,288px);padding-right:80px}
 
 /* ============ 面板 ============ */
 #panelRoot{position:absolute;inset:0;z-index:50;pointer-events:none}
