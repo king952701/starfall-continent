@@ -8,8 +8,8 @@
 
 /* ---------- 音频：WebAudio 程序化音效（无外部音频文件） ---------- */
 const Snd = {
-  ctx: null, master: null, sfx: null, music: null, musicNodes: null,
-  vol: { master: 70, sfx: 70, music: 25 },
+  ctx: null, master: null, sfx: null, music: null, musicNodes: null, amb: null,
+  vol: { master: 70, sfx: 70, music: 25, amb: 55 },
   ensure() {
     if (this.ctx) return this.ctx;
     try {
@@ -20,7 +20,11 @@ const Snd = {
       this.master.connect(this.ctx.destination);
       this.sfx = this.ctx.createGain(); this.sfx.gain.value = this.vol.sfx / 100; this.sfx.connect(this.master);
       this.music = this.ctx.createGain(); this.music.gain.value = 0; this.music.connect(this.master);
+      /* 环境音总线：流水 / 鸟鸣 / 牛羊（程序化合成，见 33_ambience.js） */
+      this.amb = this.ctx.createGain(); this.amb.gain.value = this.vol.amb / 100 * 0.5;
+      this.amb.connect(this.master);
       this.updateMusic();
+      if (typeof Ambience !== 'undefined') Ambience.tryStart();
     } catch (e) { this.ctx = null; }
     return this.ctx;
   },
@@ -29,6 +33,7 @@ const Snd = {
     if (!this.ctx) return;
     if (kind === 'master' && this.master) this.master.gain.value = this.vol.master / 100;
     if (kind === 'sfx' && this.sfx) this.sfx.gain.value = this.vol.sfx / 100;
+    if (kind === 'amb' && this.amb) this.amb.gain.value = this.vol.amb / 100 * 0.5;
     if (kind === 'music') this.updateMusic();
   },
   /** 环境音乐：两枚轻微失谐的正弦 + 低通，音量随「音乐」滑块 */
@@ -82,7 +87,7 @@ const Settings = {
   QUALITY: [['low', '低分辨率', 0.6], ['mid', '中分辨率', 0.8], ['high', '高分辨率', 1], ['4k', '4K', 1.6]],
   FPS: [[15, '15 fps'], [30, '30 fps'], [60, '60 fps'], [120, '120 fps'], [0, '无上限']],
   ZOOMS: [[0.6, '×0.6'], [0.8, '×0.8'], [1, '×1.0 标准'], [1.5, '×1.5'], [2, '×2.0']],
-  data: { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ui: {} },
+  data: { master: 70, sfx: 70, music: 25, amb: 55, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ambient: 1, ui: {} },
   editMode: false,
   _panel: null,
 
@@ -96,7 +101,11 @@ const Settings = {
       document.addEventListener('pointerdown', e => {
         if (this.data.master <= 0 || this.data.sfx <= 0) return;
         const t = e.target && e.target.closest ? e.target.closest('.btn,.mbtn,.mMenuBtn,.tab,.pclose,.tbtn') : null;
-        if (t) { Snd.ensure(); Snd.play('click'); }
+        if (t) {
+          Snd.ensure(); Snd.play('click');
+          /* 首次交互后启动环境音（浏览器要求音频必须由用户手势触发） */
+          if (typeof Ambience !== 'undefined') Ambience.tryStart();
+        }
       }, true);
     }
     return this;
@@ -108,12 +117,16 @@ const Settings = {
     } catch (e) { }
     this.data.ui = this.data.ui || {};
     Snd.vol.master = this.data.master; Snd.vol.sfx = this.data.sfx; Snd.vol.music = this.data.music;
+    Snd.vol.amb = (this.data.amb === undefined ? 55 : this.data.amb);
   },
   save() {
     try { localStorage.setItem(this.KEY, JSON.stringify(this.data)); } catch (e) { }
   },
   applyAll() { this.applyQuality(); this.applyFps(); this.applyVol(); this.applyUI(); },
-  applyVol() { Snd.setVol('master', this.data.master); Snd.setVol('sfx', this.data.sfx); Snd.setVol('music', this.data.music); },
+  applyVol() {
+    Snd.setVol('master', this.data.master); Snd.setVol('sfx', this.data.sfx); Snd.setVol('music', this.data.music);
+    Snd.setVol('amb', this.data.amb === undefined ? 55 : this.data.amb);
+  },
 
   /* ---------- 画质 ---------- */
   qScale() {
@@ -286,7 +299,7 @@ const Settings = {
 
     /* 1) 音量 */
     sec('音量 / Audio');
-    [['master', '主音量'], ['sfx', '音效'], ['music', '音乐']].forEach(v => {
+    [['master', '主音量'], ['sfx', '音效'], ['music', '音乐'], ['amb', '环境音']].forEach(v => {
       const r = row(v[1]);
       const inp = el('input', 'setRange');
       inp.type = 'range'; inp.min = 0; inp.max = 100; inp.step = 1; inp.value = this.data[v[0]];
@@ -299,6 +312,19 @@ const Settings = {
       inp.onchange = () => Snd.play('ok');
       r.appendChild(inp); r.appendChild(val);
     });
+    /* 环境音现场感：流水 / 鸟鸣 / 牛羊，可单独关闭 */
+    const ambRow = row('环境音场景', '流水声 + 树上鸟叫 + 偶尔牛羊叫（随大区与昼夜自动变化）');
+    const ambBox = el('div', 'setBtns');
+    [['1', '开'], ['0', '关']].forEach(o => {
+      const b = el('button', 'btn' + ((this.data.ambient === undefined ? 1 : this.data.ambient) === +o[0] ? ' gold' : ''), o[1]);
+      b.onclick = () => {
+        this.data.ambient = +o[0]; this.save(); Snd.play('ok');
+        if (typeof Ambience !== 'undefined') { if (+o[0]) Ambience.tryStart(); Ambience.setEnabled(+o[0]); }
+        this.open();
+      };
+      ambBox.appendChild(b);
+    });
+    ambRow.appendChild(ambBox);
 
     /* 2) 画质 */
     sec('画质 / Quality');
@@ -382,7 +408,7 @@ const Settings = {
     const bottom = el('div', 'setBtns');
     const bAll = el('button', 'btn', '恢复全部默认设置');
     bAll.onclick = () => {
-      this.data = { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ui: {} };
+      this.data = { master: 70, sfx: 70, music: 25, amb: 55, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ambient: 1, ui: {} };
       this.save(); this.applyAll(); Snd.play('ok'); this.open();
     };
     bottom.appendChild(bAll);
