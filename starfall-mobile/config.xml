@@ -20,16 +20,13 @@
   <preference name="AndroidXEnabled" value="true" />
   <preference name="android-minSdkVersion" value="24" />
   <preference name="android-targetSdkVersion" value="34" />
-  <!-- 规避 appcompat 1.6.1 的 values.xml 资源在 aapt2 下编译失败（Invalid <color>） -->
+  <!-- 规避 appcompat 的 values.xml 资源在旧 aapt2 下编译失败（Invalid <color>） -->
   <preference name="AndroidXAppCompatVersion" value="1.7.0" />
-  <preference name="AndroidXWebkitVersion" value="1.12.1" />
-  <preference name="android-buildToolsVersion" value="34.0.0" />
-  <preference name="android-compileSdkVersion" value="34" />
 
   <platform name="android">
     <preference name="AndroidLaunchMode" value="singleTop" />
     <allow-intent href="market:*" />
   </platform>
 
-  <engine name="android" spec="^13.0.0" />
+  <engine name="android" spec="^15.1.0" />
 </widget>
