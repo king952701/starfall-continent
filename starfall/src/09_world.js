@@ -263,9 +263,14 @@ class World {
   /* ---------- 渲染 ---------- */
   chunkCanvas(ch, regionKeyFallback) {
     if (ch.canvas) return ch.canvas;
+    const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const t0 = nowMs();
     const px = CHUNK * TILE_PX;
     const o = CV(px, px), x = o.x;
     const useAsset = Assets.ready;
+    /* 细节层超采样倍率：手机端默认 1（省内存），桌面 2；烘焙超时自动降回 1 */
+    if (this.ss === undefined) this.ss = (typeof Mobile !== 'undefined' && Mobile.on) ? 1 : 2;
+    const sc = this.ss > 1 ? 2 : 1;
     /* 预先取好含一圈邻居的地形信息，供基础贴图与细节层共用（避免重复计算噪声） */
     const N = CHUNK + 2, grid = new Array(N * N);
     for (let j = -1; j <= CHUNK; j++) {
@@ -275,6 +280,7 @@ class World {
     }
     const at = (i, j) => grid[clamp(j + 1, 0, N - 1) * N + clamp(i + 1, 0, N - 1)];
 
+    ch.waterTiles = []; ch.grassTiles = [];               // 供运行时逐帧动画叠加
     for (let ly = 0; ly < CHUNK; ly++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const tx = ch.cx * CHUNK + lx, ty = ch.cy * CHUNK + ly;
@@ -291,9 +297,25 @@ class World {
               : Sprites.groundTile(info.r.key, pal, Math.abs(tx * 7 + ty * 13), hv);
         }
         x.drawImage(sp, lx * TILE_PX, ly * TILE_PX);
+        /* 记录需要逐帧动画的格子：水面（波纹）与草簇（摆动） */
+        if (info.water) ch.waterTiles.push({ lx: lx, ly: ly, key: info.r.key, pal: pal, p: (tx + ty) % 3 });
+        else if (!info.mountain && hv === 1) ch.grassTiles.push({ lx: lx, ly: ly, key: info.r.key, pal: pal, v: (tx * 3 + ty) % 4 });
       }
     }
-    this.paintDetails(x, ch, at, useAsset);
+    /* 细节层：超采样烘焙后缩回原尺寸 → 岸线/明暗/过渡边缘更平滑（像素底图仍保持锐利） */
+    if (sc > 1) {
+      const d = CV(px * sc, px * sc), dx = d.x;
+      dx.imageSmoothingEnabled = true;
+      dx.save(); dx.scale(sc, sc);
+      this.paintDetails(dx, ch, at, useAsset);
+      dx.restore();
+      x.imageSmoothingEnabled = true;
+      x.drawImage(d.c, 0, 0, px * sc, px * sc, 0, 0, px, px);
+      x.imageSmoothingEnabled = false;
+      d.c.width = 0;                                     // 及时释放超采样画布
+    } else {
+      this.paintDetails(x, ch, at, useAsset);
+    }
     // 物件：按 y 排序保证遮挡正确
     for (const ob of ch.objs) {
       if (ob.node && ob.node.amount <= 0) continue;      // 已采尽：不绘制
@@ -303,6 +325,8 @@ class World {
       x.drawImage(ob.sp, dx, dy);
     }
     ch.canvas = o.c;
+    /* 自适应：烘焙过慢（低端机）自动关闭超采样 */
+    if (sc > 1 && nowMs() - t0 > 16) this.ss = 1;
     return ch.canvas;
   }
   /** 地表细节层：山体投影 / 岸线浅滩 / 山脚碎石 / 区域过渡 / 高低明暗 / 微噪点
@@ -394,12 +418,33 @@ class World {
   draw(ctx, cam) {
     const c0 = Math.floor(cam.x / (CHUNK * TILE_PX)) - 1, c1 = Math.floor((cam.x + cam.w) / (CHUNK * TILE_PX)) + 1;
     const r0 = Math.floor(cam.y / (CHUNK * TILE_PX)) - 1, r1 = Math.floor((cam.y + cam.h) / (CHUNK * TILE_PX)) + 1;
+    const now = Date.now();
+    const wf = Math.floor(now / 380) % 3;                 // 水面 3 帧
+    const gf = Math.floor(now / 620) % 2;                 // 草丛 2 帧
     for (let cy = r0; cy <= r1; cy++) {
       for (let cx = c0; cx <= c1; cx++) {
         if (cx < 0 || cy < 0 || cx * CHUNK >= WORLD_SIZE || cy * CHUNK >= WORLD_SIZE) continue;
         const ch = this.getChunk(cx, cy);
         const cv = this.chunkCanvas(ch);
         ctx.drawImage(cv, cx * CHUNK * TILE_PX, cy * CHUNK * TILE_PX);
+        /* 逐帧动画：水面波纹（半透明叠加，保留烘焙好的岸线/浅滩） */
+        if (ch.waterTiles && ch.waterTiles.length) {
+          ctx.globalAlpha = 0.6;
+          for (let i = 0; i < ch.waterTiles.length; i++) {
+            const wt = ch.waterTiles[i];
+            ctx.drawImage(Sprites.waterTile(wt.key, wt.pal, (wf + wt.p) % 3),
+              (cx * CHUNK + wt.lx) * TILE_PX, (cy * CHUNK + wt.ly) * TILE_PX);
+          }
+          ctx.globalAlpha = 1;
+        }
+        /* 逐帧动画：草丛摆动 */
+        if (ch.grassTiles && ch.grassTiles.length) {
+          for (let i = 0; i < ch.grassTiles.length; i++) {
+            const gt = ch.grassTiles[i];
+            ctx.drawImage(Sprites.grassTuft(gt.key, gt.pal, gt.v, (gf + gt.v) % 2),
+              (cx * CHUNK + gt.lx) * TILE_PX, (cy * CHUNK + gt.ly) * TILE_PX);
+          }
+        }
         // 采集点消耗后绘制残影
         for (const [k, nd] of ch.nodes) {
           if (nd.amount <= 0) continue;
