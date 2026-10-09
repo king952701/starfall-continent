@@ -238,7 +238,8 @@ class Game {
       this.home.update(dt);
     }
     this.updateAmbient(dt);
-    if (typeof Weather !== 'undefined') Weather.update(dt, this);   // 天气 AI + 天气粒子                        // 环境粒子（雪 / 沙 / 落叶 / 萤火）
+    if (typeof Weather !== 'undefined') Weather.update(dt, this);   // 天气 AI + 天气粒子
+    if (typeof Ambience !== 'undefined') Ambience.tick(this, dt);   // 环境音：按大区/昼夜/天气调整                        // 环境粒子（雪 / 沙 / 落叶 / 萤火）
     // 实体
     for (let i = this.monsters.length - 1; i >= 0; i--) {
       const m = this.monsters[i];
