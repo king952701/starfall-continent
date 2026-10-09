@@ -157,11 +157,17 @@ class Game {
     out.sort((a, b) => a.d - b.d);
     return out;
   }
+  /** 静默设定自动导航目标（挂机等系统内部使用，不弹提示） */
+  setRoute(tx, ty, name) {
+    if (this.inHome) return;
+    tx = clamp(Math.round(tx), 0, WORLD_SIZE - 1); ty = clamp(Math.round(ty), 0, WORLD_SIZE - 1);
+    this.route = { tx: tx, ty: ty, name: name || null, t: 0, stuck: 0, side: 0, sideT: 0, lastSide: 0 };
+  }
   /** 设定自动前往目标（格坐标） */
   autoTravel(tx, ty, name) {
     if (this.inHome) { UI.toast('家园为独立空间，无法自动前往', '#ff9a9a'); return; }
     tx = clamp(Math.round(tx), 0, WORLD_SIZE - 1); ty = clamp(Math.round(ty), 0, WORLD_SIZE - 1);
-    this.route = { tx: tx, ty: ty, name: name || null, t: 0, stuck: 0, side: 0, sideT: 0, lastSide: 0 };
+    this.setRoute(tx, ty, name);
     UI.toast('自动前往 ' + (name ? name + ' ' : '') + '(' + tx + ', ' + ty + ')', '#9fd06a');
     UI.log('自动前往中…移动（WASD）可取消导航', '#cfe86a');
   }
@@ -455,6 +461,17 @@ class Game {
       }
     }
     this.interactHint = txt;
+    this.updateNodePop();
+  }
+  /** 靠近资源点 → 自动弹出资源信息面板（3 秒后淡出）；走开 → 慢慢淡出 */
+  updateNodePop() {
+    if (typeof UI === 'undefined' || !UI.nodePop) return;
+    const near = (this.inHome || !this.world) ? null
+      : this.world.nearestNode(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX), 2.4);
+    const nd = near ? near.node : null;
+    if (nd === this._popNd) return;                 // 同一个资源点不重复弹
+    this._popNd = nd;
+    if (nd) UI.nodePop(nd); else UI.nodePopHide();
   }
 
   /* ================= 采集 ================= */
