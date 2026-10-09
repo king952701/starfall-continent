@@ -266,22 +266,34 @@ class World {
     const px = CHUNK * TILE_PX;
     const o = CV(px, px), x = o.x;
     const useAsset = Assets.ready;
+    /* 预先取好含一圈邻居的地形信息，供基础贴图与细节层共用（避免重复计算噪声） */
+    const N = CHUNK + 2, grid = new Array(N * N);
+    for (let j = -1; j <= CHUNK; j++) {
+      for (let i = -1; i <= CHUNK; i++) {
+        grid[(j + 1) * N + (i + 1)] = this.tileInfo(ch.cx * CHUNK + i, ch.cy * CHUNK + j);
+      }
+    }
+    const at = (i, j) => grid[clamp(j + 1, 0, N - 1) * N + clamp(i + 1, 0, N - 1)];
+
     for (let ly = 0; ly < CHUNK; ly++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const tx = ch.cx * CHUNK + lx, ty = ch.cy * CHUNK + ly;
-        const info = this.tileInfo(tx, ty);
+        const info = at(lx, ly);
         const pal = info.r.pal;
         const seed = Math.abs(tx * 73856093 ^ ty * 19349663);
         const kind = info.water ? 'water' : info.mountain ? 'mount' : 'ground';
-        let sp = useAsset ? Assets.tile(info.r.key, kind, seed + (kind === 'ground' ? info.variant : 0)) : null;
+        /* 6 种变体按坐标哈希取用，避免大片地表看起来一模一样 */
+        const hv = Math.floor(hash2(tx, ty, this.seed + 91) * 6) % 6;
+        let sp = useAsset ? Assets.tile(info.r.key, kind, seed + hv) : null;
         if (!sp) {
-          sp = info.water ? Sprites.waterTile(info.r.key, pal, 0)
+          sp = info.water ? Sprites.waterTile(info.r.key, pal, hv % 3)
             : info.mountain ? Sprites.mountainTile(info.r.key, pal)
-              : Sprites.groundTile(info.r.key, pal, Math.abs(tx * 7 + ty * 13), info.variant);
+              : Sprites.groundTile(info.r.key, pal, Math.abs(tx * 7 + ty * 13), hv);
         }
         x.drawImage(sp, lx * TILE_PX, ly * TILE_PX);
       }
     }
+    this.paintDetails(x, ch, at, useAsset);
     // 物件：按 y 排序保证遮挡正确
     for (const ob of ch.objs) {
       if (ob.node && ob.node.amount <= 0) continue;      // 已采尽：不绘制
@@ -293,6 +305,92 @@ class World {
     ch.canvas = o.c;
     return ch.canvas;
   }
+  /** 地表细节层：山体投影 / 岸线浅滩 / 山脚碎石 / 区域过渡 / 高低明暗 / 微噪点
+   *  只在区块烘焙时执行一次，不增加运行时开销 */
+  paintDetails(x, ch, at, useAsset) {
+    const T = TILE_PX, seed = this.seed;
+    const strip = (px, py, side, col, w) => {
+      x.fillStyle = col;
+      if (side === 'n') x.fillRect(px, py, T, w);
+      else if (side === 's') x.fillRect(px, py + T - w, T, w);
+      else if (side === 'w') x.fillRect(px, py, w, T);
+      else x.fillRect(px + T - w, py, w, T);
+    };
+    for (let ly = 0; ly < CHUNK; ly++) {
+      for (let lx = 0; lx < CHUNK; lx++) {
+        const c = at(lx, ly), pal = c.r.pal;
+        const n = at(lx, ly - 1), s = at(lx, ly + 1), w = at(lx - 1, ly), e = at(lx + 1, ly);
+        const px = lx * T, py = ly * T;
+        const tx = ch.cx * CHUNK + lx, ty = ch.cy * CHUNK + ly;
+
+        /* 1) 高低明暗：假设光来自西北，用高度梯度做柔和高光/阴影 */
+        if (!c.water) {
+          const dh = (e.h - w.h) + (s.h - n.h);
+          const lit = clamp(-dh * 2.6, -1, 1);
+          if (lit > 0.02) { x.fillStyle = 'rgba(255,255,255,' + (lit * 0.13).toFixed(3) + ')'; x.fillRect(px, py, T, T); }
+          else if (lit < -0.02) { x.fillStyle = 'rgba(0,0,0,' + (-lit * 0.12).toFixed(3) + ')'; x.fillRect(px, py, T, T); }
+        }
+
+        /* 2) 山体：投影、边缘明暗、山脚碎石过渡 */
+        if (c.mountain) {
+          if (!s.mountain) { x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(px, py + T - 4, T, 4); }
+          if (!n.mountain) strip(px, py, 'n', 'rgba(255,255,255,.10)', 3);
+          if (!w.mountain) strip(px, py, 'w', 'rgba(0,0,0,.14)', 3);
+          if (!e.mountain) strip(px, py, 'e', 'rgba(0,0,0,.10)', 3);
+        } else if (!c.water && (n.mountain || w.mountain || e.mountain)) {
+          if (n.mountain) { x.fillStyle = 'rgba(0,0,0,.20)'; x.fillRect(px, py, T, 6); }
+          const rc = pal.rock || pal.mountain;
+          x.globalAlpha = 0.30;
+          if (n.mountain) x.fillRect(px + ((tx * 7 + ty) % 5), py, 6, 2);
+          if (w.mountain) x.fillRect(px, py + ((tx * 5 + ty * 3) % 20), 2, 6);
+          if (e.mountain) x.fillRect(px + T - 2, py + ((tx * 3 + ty * 7) % 20), 2, 6);
+          x.globalAlpha = 1;
+        }
+
+        /* 3) 水体：深水更暗 + 临岸浅滩与浪花；陆地：邻水沙滩与泡沫 */
+        if (c.water) {
+          const deep = clamp((0.20 - c.h) / 0.20, 0, 1);
+          if (deep > 0.05) { x.fillStyle = 'rgba(0,0,0,' + (deep * 0.28).toFixed(3) + ')'; x.fillRect(px, py, T, T); }
+          const shallow = shade(pal.water, 46);
+          if (!n.water) { strip(px, py, 'n', 'rgba(255,255,255,.14)', 5); strip(px, py, 'n', shallow, 2); }
+          if (!s.water) { strip(px, py, 's', 'rgba(255,255,255,.10)', 5); strip(px, py, 's', shallow, 2); }
+          if (!w.water) { strip(px, py, 'w', 'rgba(255,255,255,.12)', 4); strip(px, py, 'w', shallow, 2); }
+          if (!e.water) { strip(px, py, 'e', 'rgba(255,255,255,.12)', 4); strip(px, py, 'e', shallow, 2); }
+        } else {
+          const beach = pal.sand || pal.dirt || shade(pal.ground[0], 20);
+          if (n.water) { strip(px, py, 'n', beach, 4); strip(px, py, 'n', 'rgba(255,255,255,.20)', 2); }
+          if (s.water) { strip(px, py, 's', beach, 4); strip(px, py, 's', 'rgba(255,255,255,.16)', 2); }
+          if (w.water) { strip(px, py, 'w', beach, 3); strip(px, py, 'w', 'rgba(255,255,255,.16)', 2); }
+          if (e.water) { strip(px, py, 'e', beach, 3); strip(px, py, 'e', 'rgba(255,255,255,.16)', 2); }
+        }
+
+        /* 4) 区域过渡：邻格属于别的大区时做柔和渗透，消除生硬直线边界 */
+        if (!c.water && !c.mountain) {
+          const sides = [[n, 'n'], [s, 's'], [w, 'w'], [e, 'e']];
+          for (let i = 0; i < sides.length; i++) {
+            const oi = sides[i][0], side = sides[i][1];
+            if (oi.r.key === c.r.key || oi.water) continue;
+            const col = oi.r.pal.ground[0];
+            x.globalAlpha = 0.26; strip(px, py, side, col, 6);
+            x.globalAlpha = 0.14; strip(px, py, side, col, 11);
+            x.globalAlpha = 1;
+          }
+        }
+
+        /* 5) 微噪点：程序化贴图时补一层细碎质感，避免整片重复 */
+        if (!useAsset && !c.water) {
+          const cnt = 2 + Math.floor(hash2(tx, ty, seed + 555) * 3);
+          for (let i = 0; i < cnt; i++) {
+            const a = hash2(tx * 13 + i, ty * 7 + i * 3, seed + 77);
+            const b = hash2(tx * 5 + i * 11, ty * 17 + i, seed + 99);
+            x.fillStyle = a > b ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.10)';
+            x.fillRect(px + Math.floor(a * (T - 2)), py + Math.floor(b * (T - 1)), 2, 1);
+          }
+        }
+      }
+    }
+  }
+
   draw(ctx, cam) {
     const c0 = Math.floor(cam.x / (CHUNK * TILE_PX)) - 1, c1 = Math.floor((cam.x + cam.w) / (CHUNK * TILE_PX)) + 1;
     const r0 = Math.floor(cam.y / (CHUNK * TILE_PX)) - 1, r1 = Math.floor((cam.y + cam.h) / (CHUNK * TILE_PX)) + 1;
