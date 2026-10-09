@@ -17,6 +17,12 @@ const BUFFS = {
   B015: { name: '幸运星', icon: '🍀', type: 'buff', rule: 1, dur: 600, mods: { dropPct: 25 }, desc: '掉落率+25%' },
   B016: { name: '元素亲和', icon: '✨', type: 'buff', rule: 1, dur: 300, mods: { elemDmg: 15 }, desc: '元素伤害+15%' },
   B020: { name: '经验加成', icon: '📚', type: 'buff', rule: 1, dur: 600, mods: { expPct: 25 }, desc: '经验获取+25%' },
+  /* 渔家菜肴（烹饪产出） */
+  B021: { name: '河鲜滋养', icon: '🦐', type: 'buff', rule: 1, dur: 300, mods: { atkPct: 12 }, desc: 'ATK+12%' },
+  B022: { name: '渔家铁壁', icon: '🐟', type: 'buff', rule: 1, dur: 300, mods: { defPct: 12 }, desc: 'DEF+12%' },
+  B023: { name: '鲜灵醒脑', icon: '鱼', type: 'buff', rule: 1, dur: 300, mods: { crit: 6 }, desc: '暴击率+6%' },
+  B024: { name: '湖光轻身', icon: '🍚', type: 'buff', rule: 1, dur: 300, mods: { gatherSpeed: 20, moveSpd: 10 }, desc: '采集速度+20%，移速+10%' },
+  B025: { name: '银鱼聪慧', icon: '🍲', type: 'buff', rule: 1, dur: 600, mods: { expPct: 15 }, desc: '经验获取+15%' },
   B019: { name: '财富祝福', icon: '💰', type: 'buff', rule: 1, dur: 600, mods: { goldPct: 25 }, desc: '金币获取+25%' },
   /* 战斗增益 */
   B101: { name: '生命回复', icon: '💚', type: 'buff', rule: 2, dur: 10, dotHealPct: 2, desc: '每秒回复 2% 最大HP' },
