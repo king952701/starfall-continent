@@ -190,6 +190,12 @@ class Game {
   update(dt) {
     const p = this.player;
     this.timeSec += dt;
+    // 玩家有操作（移动 / 按住攻击 / 摇杆）→ 重置「10 秒无操作自动关闭面板」计时
+    if (typeof UI !== 'undefined' && UI.touch) {
+      const k = this.keys;
+      const joyOn = (typeof Mobile !== 'undefined' && Mobile.on && (Mobile.dx || Mobile.dy));
+      if (this.mouse.down || joyOn || k['w'] || k['a'] || k['s'] || k['d']) UI.touch();
+    }
     this.mouse.worldX = this.cam.x + this.mouse.x; this.mouse.worldY = this.cam.y + this.mouse.y;
     p.aimAngle = angleOf(p.x, p.y - 8, this.mouse.worldX, this.mouse.worldY);
     if (!p.dead) this.movePlayer(dt);
