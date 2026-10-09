@@ -222,6 +222,17 @@ fish(6014, '星辉鱼', 1600, 8, 55, '#5cf0ff', 'ruin');
 fish(6015, '虹彩水母', 1800, 8, 58, '#ff9fe8', 'ruin');
 fish(6016, '深海鳕', 60, 3, 8, '#a8c0d8', 'coast');
 fish(6017, '金枪鱼', 140, 4, 18, '#5a8ac0', 'coast');
+/* 江河 / 湖泊渔场（现实鱼种）：蜿蜒大河与平静湖泊专属 */
+fish(6018, '黄颡鱼', 90, 3, 6, '#d8b04a', 'river');
+fish(6019, '青鱼', 110, 3, 12, '#5a7a6a', 'river');
+fish(6020, '鳜鱼', 180, 4, 16, '#8a9a5a', 'river');
+fish(6021, '中华鲟', 1200, 8, 45, '#7a8a9a', 'river');
+fish(6022, '河虾', 40, 2, 3, '#c8a08a', 'river');
+fish(6023, '鳙鱼', 40, 2, 6, '#9a8a6a', 'lake');
+fish(6024, '团头鲂', 70, 3, 9, '#8a9a8a', 'lake');
+fish(6025, '黑鱼', 130, 4, 14, '#4a5a4a', 'lake');
+fish(6026, '太湖银鱼', 260, 5, 24, '#e8f0f8', 'lake');
+fish(6027, '青虾', 55, 2, 5, '#b8a08a', 'lake');
 
 /* 种子 / 作物 */
 function cropPair(id, seedName, cropName, growMin, price, lv, fish0) {
@@ -258,6 +269,13 @@ consum(3009, '采集加速药水', 120, 10, '10分钟采集速度 +25%', g => { 
 consum(3010, '回城卷轴', 50, 1, '传送回星落村', g => { g.teleportTo(g.world.homeEntry.x, g.world.homeEntry.y); return true; }, 'scroll', '#ffe0a0');
 consum(3011, '烤肉', 80, 5, '食用后 5 分钟内 ATK+10%（战斗回血）', g => { BuffSys.apply(g.player, 'B001', g); g.player.hp = Math.min(g.player.maxHp, g.player.hp + g.player.maxHp * 0.2); return true; }, 'food', '#c0703a', 'B001');
 consum(3012, '蔬菜汤', 80, 5, '食用后 5 分钟内 DEF+10%', g => { BuffSys.apply(g.player, 'B004', g); return true; }, 'food', '#7fbf6f', 'B004');
+/* 渔家菜（江河 / 湖泊鱼虾烹饪） */
+consum(3013, '香煎河虾', 100, 6, '食用后 5 分钟内 ATK+12%', g => { BuffSys.apply(g.player, 'B021', g); return true; }, 'food', '#e0a05a', 'B021');
+consum(3014, '鱼头豆腐汤', 120, 10, '食用后 5 分钟内 DEF+12%，并恢复 15% 生命', g => { BuffSys.apply(g.player, 'B022', g); g.player.hp = Math.min(g.player.maxHp, g.player.hp + g.player.maxHp * 0.15); return true; }, 'food', '#d8c890', 'B022');
+consum(3015, '清蒸鳜鱼', 220, 16, '食用后 5 分钟内暴击率 +6%', g => { BuffSys.apply(g.player, 'B023', g); return true; }, 'food', '#cfe0a0', 'B023');
+consum(3016, '湖鲜炒饭', 150, 12, '食用后 5 分钟内采集速度 +20%、移速 +10%', g => { BuffSys.apply(g.player, 'B024', g); return true; }, 'food', '#e8d8a0', 'B024');
+consum(3017, '太湖银鱼羹', 300, 24, '食用后 10 分钟内经验获取 +15%', g => { BuffSys.apply(g.player, 'B025', g); return true; }, 'food', '#f0f4ff', 'B025');
+consum(3018, '酸菜鱼', 260, 20, '食用后 5 分钟内 ATK+12%，并恢复 20% 生命', g => { BuffSys.apply(g.player, 'B021', g); g.player.hp = Math.min(g.player.maxHp, g.player.hp + g.player.maxHp * 0.2); return true; }, 'food', '#d0b86a', 'B021');
 
 /* ================= 实例与通用接口 ================= */
 function newItem(id, n, q, lv) {
