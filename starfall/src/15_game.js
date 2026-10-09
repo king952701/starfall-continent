@@ -905,17 +905,19 @@ class Game {
     const ctx = this.ctx, cam = this.cam;
     const z = cam.zoom || 1;
     const view = this.camView();                  // 剔除用可视世界范围（已含缩放）
+    this._sun = this.sun();                       // 本帧太阳方位（阴影与光照共用）
     ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, cam.w, cam.h);
     ctx.save();
     ctx.scale(z, z);                              // 瓦片地图随缩放一起放大 / 缩小
     ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
     if (this.inHome) this.home.draw(ctx, view);
     else this.world.draw(ctx, view);
+    this.drawObjectShadows(ctx);                  // 太阳投影：树 / 石 / 矿 / 草
     this.drawFx(ctx);
     // 鼠标悬停的资源点高亮
     if (this.hover) {
       const nd = this.hover;
-      ctx.strokeStyle = 'rgba(255,215,106,.85)'; ctx.lineWidth = 2;
+      ctx.strokeStyle = nd.qColor || 'rgba(255,215,106,.85)'; ctx.lineWidth = 2;   // 高亮圈跟随资源等级色
       ctx.setLineDash([5, 4]);
       ctx.beginPath(); ctx.arc(nd.tx * TILE_PX + 16, nd.ty * TILE_PX + 16, 20, 0, 6.28); ctx.stroke();
       ctx.setLineDash([]);
@@ -968,6 +970,59 @@ class Game {
       ctx.textAlign = 'left';
     }
   }
+  /* ---------- 太阳光照：方位 + 动态投影 ----------
+   * sun.x：-1 日出（光从左侧来）→ 0 正午（头顶）→ +1 日落（光从右侧来）
+   * sun.light：太阳高度（0 = 地平线 / 夜间，1 = 头顶）；影子早晚长、正午短、夜间只剩淡淡环境影 */
+  sun() {
+    const DAY = 480;
+    const ph = ((this.timeSec % DAY) + DAY) % DAY / DAY;
+    const ang = (ph - 0.25) * Math.PI * 2;
+    const sx = Math.sin(ang), elev = Math.cos(ang);
+    return { ph: ph, x: sx, elev: elev, light: clamp(elev, 0, 1) };
+  }
+  /** 在地面画一个随太阳方位偏移、随高度伸缩的影子 */
+  drawShadow(ctx, wx, wy, rx, ry) {
+    const s = this._sun || (this._sun = this.sun());
+    const len = (rx * 0.85 + 10) * (1.55 - s.light);            // 太阳越低，影子拉得越长
+    const ox = -s.x * len, oy = 6 + (1 - s.light) * 3;
+    const a = 0.12 + 0.26 * s.light;                            // 夜间保留极淡的环境影，避免角色悬空
+    ctx.save();
+    ctx.globalAlpha = a; ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(wx + ox, wy + oy, rx * (1 + (1 - s.light) * 0.75), ry, 0, 0, 6.28);
+    ctx.fill();
+    ctx.restore();
+  }
+  /** 场景物件投影：树 / 石 / 矿 / 草 / 渔点随太阳投出同一方向的影子（限量，低端机也不掉帧） */
+  drawObjectShadows(ctx) {
+    const s = this._sun; if (!s || this.inHome) return;
+    const v = this.camView(), w = this.world;
+    if (!w || !w.chunks) return;
+    const CP = CHUNK * TILE_PX;
+    const c0 = Math.floor(v.x / CP) - 1, c1 = Math.floor((v.x + v.w) / CP) + 1;
+    const r0 = Math.floor(v.y / CP) - 1, r1 = Math.floor((v.y + v.h) / CP) + 1;
+    const cap = (typeof Mobile !== 'undefined' && Mobile.on) ? 90 : 200;
+    let n = 0;
+    for (let cy = r0; cy <= r1 && n < cap; cy++) {
+      for (let cx = c0; cx <= c1 && n < cap; cx++) {
+        if (cx < 0 || cy < 0 || cx * CHUNK >= WORLD_SIZE || cy * CHUNK >= WORLD_SIZE) continue;
+        const ch = w.getChunk(cx, cy);
+        if (!ch || !ch.objs) continue;
+        for (const ob of ch.objs) {
+          if (n >= cap) break;
+          if (ob.node && ob.node.amount <= 0) continue;
+          if (ob.kind === 'chest' && ob.opened) continue;
+          if (ob.kind === 'fish') continue;                     // 水面上的渔点不投影
+          const wx = (cx * CHUNK + ob.lx) * TILE_PX + 16 + (ob.ox || 0);
+          const wy = (cy * CHUNK + ob.ly) * TILE_PX + TILE_PX - 2 + (ob.oy || 0);
+          if (wx < v.x - 48 || wx > v.x + v.w + 48 || wy < v.y - 48 || wy > v.y + v.h + 48) continue;
+          this.drawShadow(ctx, wx, wy, ob.kind === 'tree' ? 14 : 11, ob.kind === 'tree' ? 5 : 4);
+          n++;
+        }
+      }
+    }
+  }
+
   /* ---------- 大气层：远景雾化 + 昼夜光照 ----------
    * 一轮昼夜 8 分钟：0 清晨 / .25 正午 / .52 黄昏 / .75 夜晚
    * 夜间玩家自带暖光（提灯），雾色取自当前大区的 pal.fog */
@@ -998,6 +1053,17 @@ class Game {
       g.addColorStop(1, 'rgba(255,200,120,0)');
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    /* 太阳方向光：从太阳所在一侧洒下的暖光，正午最盛、黄昏偏橙、夜间消失 */
+    const s = this._sun || (this._sun = this.sun());
+    if (s.light > 0.04 && night < 0.7) {
+      const warm = dusk > 0.3 ? '255,170,90' : '255,222,158';
+      const g3 = ctx.createLinearGradient(s.x >= 0 ? w : 0, 0, s.x >= 0 ? 0 : w, h * 0.65);
+      g3.addColorStop(0, 'rgba(' + warm + ',' + (0.13 * s.light).toFixed(3) + ')');
+      g3.addColorStop(1, 'rgba(' + warm + ',0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g3; ctx.fillRect(0, 0, w, h);
       ctx.globalCompositeOperation = 'source-over';
     }
     const r = regionAtTile(Math.floor(this.player.x / TILE_PX), Math.floor(this.player.y / TILE_PX));
@@ -1090,9 +1156,8 @@ class Game {
     const idx = p.moving ? (Math.floor(p.animT * 6) % 4) : 0;
     const cv = frames[idx];
     const cx = Math.round(p.x - sp.w / 2), cy = Math.round(p.y - sp.h + 12);
-    // 影子
-    ctx.globalAlpha = 0.35; ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(p.x, p.y + 6, 12, 5, 0, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+    // 影子：随太阳方位偏移、随太阳高度伸缩
+    this.drawShadow(ctx, p.x, p.y, 12, 5);
     if (p.invulnT > 0) ctx.globalAlpha = 0.55;
     if (p.dead) { ctx.save(); ctx.translate(cx + sp.w / 2, cy + sp.h / 2); ctx.rotate(1.4); ctx.drawImage(cv, -sp.w / 2, -sp.h / 2); ctx.restore(); }
     else ctx.drawImage(cv, cx, cy);
@@ -1112,9 +1177,7 @@ class Game {
     const cv = frames[f];
     const wpx = 32 * clamp(size, 0.6, 3.2) * 1.4, hpx = wpx;
     const cx = Math.round(m.x - wpx / 2), cy = Math.round(m.y - hpx + 12);
-    ctx.globalAlpha = 0.35; ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(m.x, m.y + 6, wpx * 0.35, hpx * 0.14, 0, 0, 6.28); ctx.fill();
-    ctx.globalAlpha = 1;
+    this.drawShadow(ctx, m.x, m.y, wpx * 0.35, hpx * 0.14);
     if (m.dead) {
       ctx.globalAlpha = clamp(1 - (Date.now() - m.deadT) / 3000, 0, 1);
       ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(1.5);
