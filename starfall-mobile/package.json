@@ -11,7 +11,7 @@
     "apk": "npm run sync && cordova build android --debug"
   },
   "devDependencies": {
-    "cordova": "^12.0.0",
-    "cordova-android": "^13.0.0"
+    "cordova": "^13.0.0",
+    "cordova-android": "^15.1.0"
   }
 }
