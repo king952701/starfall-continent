@@ -58,6 +58,9 @@ const UI = {
     this.buildChat();
     $('hud').classList.remove('hide');
     window.addEventListener('resize', () => this.fitPanels());   // 旋屏 / 窗口变化时重新居中缩放
+    // 任意操作都重置「10 秒无操作自动关闭」计时
+    ['mousedown', 'keydown', 'wheel', 'touchstart'].forEach(ev =>
+      window.addEventListener(ev, () => this.touch(), { passive: true }));
   },
   log(t, color) {
     if (!this.elLog) return;
@@ -410,6 +413,27 @@ const UI = {
   },
 
   /* ---------- 通用面板 ---------- */
+  /** 记录一次玩家操作：重置自动关闭倒计时（默认 10 秒无操作自动关闭所有面板） */
+  touch() {
+    const at = Date.now() + (this.autoCloseMs || 10000);
+    this._closeAt = at;
+    if (this._idleTimer && this._schedAt && this._schedAt >= at && this._schedAt - at <= 250) return;  // 已排在相近时刻触发，无需重建定时器
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+    this._schedAt = at;
+    this._idleTimer = setTimeout(() => this.autoCloseAll(), Math.max(50, at - Date.now()));
+  },
+  checkIdle() {
+    if (Date.now() < (this._closeAt || 0)) return;
+    this.autoCloseAll();
+  },
+  autoCloseAll() {
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; this._schedAt = 0; }
+    let open = false;
+    for (const k in this.panels) { if (this.panels[k].el.style.display !== 'none') { open = true; break; } }
+    if (!open) return;
+    this.closeAll();
+    this.toast && this.toast('10 秒无操作，面板已自动关闭', '#9fb0dd');
+  },
   /** 把面板缩放到可视区并居中：手机横屏/竖屏都不会超出屏幕，且内容可滚动 */
   fitPanel(k) {
     const pt = this.panels[k]; if (!pt || !pt.el) return null;
@@ -436,6 +460,7 @@ const UI = {
       const old = this.panels[name];
       old.el.style.display = '';
       this.fitPanel(name);
+      this.touch();                                      // 重新计时：10 秒无操作自动关闭
       return old;
     }
     const p = el('div', 'panel');
@@ -448,7 +473,8 @@ const UI = {
     p.style.width = pw + 'px'; p.style.height = ph + 'px';
     p.style.left = clamp(left, 6, Math.max(6, vw - pw - 6)) + 'px';
     p.style.top = clamp(top, 6, Math.max(6, vh - ph - 6)) + 'px';
-    const t = el('div', 'ptitle', '<span>' + title + '</span><span class="pclose" title="关闭">✕</span>');
+    const closeTxt = (typeof Mobile !== 'undefined' && Mobile.on) ? '✕ 关闭' : '✕';
+    const t = el('div', 'ptitle', '<span>' + title + '</span><span class="pclose" title="关闭">' + closeTxt + '</span>');
     const b = el('div', 'pbody');
     b.style.height = (ph - 30) + 'px';
     b.style.overflowY = 'auto'; b.style.overflowX = 'hidden';
@@ -465,6 +491,7 @@ const UI = {
     const obj = { el: p, body: b, title: t, _ow: w, _oh: h };
     this.panels[name] = obj;
     if (p._ow === undefined) { p._ow = w; p._oh = h; }   // DOM 上保留原始尺寸供 fitPanel 使用
+    this.touch();                                        // 打开面板开始计时
     return obj;
   },
   toggle(name, fn) {
@@ -1486,7 +1513,9 @@ const UI = {
     const pan = this.panels.gear;
     if (pan.el.style.display === 'none') return;
     pan.body.innerHTML = '';
-    if (this.isGearGone(inst)) { pan.body.innerHTML = '<div class="mini">该物品已不在你的背包 / 装备栏中。</div>'; return; }
+    if (opts.marketLid === undefined && this.isGearGone(inst)) {
+      pan.body.innerHTML = '<div class="mini">该物品已不在你的背包 / 装备栏中。</div>'; return;
+    }
     const def = ITEMS[inst.id], q = getQuality(inst.q);
     const isLink = !!opts.link;
     const isGear = inst.type === 'gear';
@@ -1537,7 +1566,7 @@ const UI = {
       const stat = el('div', 'gStats');
       gearDisplayLines(inst).forEach(l => stat.appendChild(el('div', 'gRow', '<span>' + l.t + '</span><b>' + l.v + '</b>')));
       pan.body.appendChild(stat);
-      if (!isLink) {
+      if (!isLink && opts.marketLid === undefined) {        // 拍卖行挂单不能强化/洗练/打孔
         pan.body.appendChild(this.gearEnhanceBlock(inst));
         pan.body.appendChild(this.gearRerollBlock(inst));
         pan.body.appendChild(this.gearSocketBlock(inst));
@@ -1547,7 +1576,7 @@ const UI = {
     /* ---------- 操作区 ---------- */
     pan.body.appendChild(el('div', 'lbl', '操作'));
     const ops = el('div', 'btnRow');
-    if (!isLink) {
+    if (!isLink && opts.marketLid === undefined) {         // 拍卖行挂单只可购买/下架
       if (isGear) {
         if (opts.equipped) {
           const b = el('button', 'btn', '卸下');
@@ -1587,7 +1616,54 @@ const UI = {
     }
     pan.body.appendChild(ops);
 
-    if (!isLink && opts.bagIdx === undefined) {
+    /* ---------- 拍卖行挂单：购买 / 下架 ---------- */
+    if (opts.marketLid !== undefined) {
+      const lt = Market.get(opts.marketLid);
+      if (!lt) {
+        pan.body.appendChild(el('div', 'mini', '该挂单已被买走或已下架。'));
+        this.toast('该挂单已不存在', '#ff9a9a');
+      } else {
+        const total = Market.totalOf(lt);
+        const cnt = lt.inst.type === 'gear' ? 1 : (lt.inst.n || 1);
+        const trade = el('div', 'gBlock');
+        trade.appendChild(el('div', 'lbl', '拍卖行'));
+        trade.appendChild(el('div', 'matRow',
+          '卖家 <b>' + lt.seller + '</b>　单价 <b style="color:#ffdf94">' + fmt(lt.unit) + ' 金</b>' +
+          '　数量 <b>' + fmt(cnt) + '</b>　总价 <b style="color:#ffdf94">' + fmt(total) + ' 金</b>' +
+          '　（成交扣 ' + Math.round(MARKET_TAX * 100) + '% 手续费）　持有金币 ' + fmt(p.gold)));
+        const rowM = el('div', 'btnRow');
+        if (lt.mine) {
+          const bCancel = el('button', 'btn', '下架取回');
+          bCancel.onclick = () => {
+            const r = Market.cancel(lt.lid, p);
+            this.toast(r.msg, r.ok ? '#9fd06a' : '#ff9a9a');
+            this.refreshBag();
+            this.closeGearPanel();
+            this.renderMarket();
+          };
+          rowM.appendChild(bCancel);
+        } else {
+          const bBuy = el('button', 'btn gold', '购买（' + fmt(total) + ' 金）');
+          bBuy.disabled = p.gold < total;
+          bBuy.onclick = () => {
+            const r = Market.buy(lt.lid, p);
+            this.toast(r.msg, r.ok ? '#9fd06a' : '#ff9a9a');
+            this.log('拍卖行：' + r.msg, r.ok ? '#ffd76a' : '#ff9a9a');
+            this.refreshBag();
+            if (r.ok) this.closeGearPanel();
+            this.renderMarket();
+          };
+          rowM.appendChild(bBuy);
+        }
+        const bBack = el('button', 'btn', '返回拍卖行 (Y)');
+        bBack.onclick = () => { this.closeGearPanel(); this.openMarket(); };
+        rowM.appendChild(bBack);
+        trade.appendChild(rowM);
+        pan.body.appendChild(trade);
+      }
+    }
+
+    if (!isLink && opts.bagIdx === undefined && opts.marketLid === undefined) {
       pan.body.appendChild(el('div', 'mini', '已穿戴 / 他人分享的物品不能直接出售或上架：装备请先卸下，链接物品只可查看与转发。'));
     }
     if (!isLink && opts.bagIdx !== undefined) {
@@ -1793,6 +1869,13 @@ const UI = {
   },
 
   /* ================= 拍卖行 ================= */
+  /** 拍卖行挂单 → 物品信息面板（含 购买 / 下架） */
+  openMarketItem(lid) {
+    const t = Market.get(lid);
+    if (!t) { this.toast('该挂单已不存在', '#ff9a9a'); this.renderMarket(); return; }
+    this.openItem(t.inst, { marketLid: lid });
+  },
+
   openMarket() {
     const pan = this.panel('market', '拍卖行 · 玩家交易行', 860, 600, 180, 20);
     pan.body.innerHTML = '';
@@ -1861,12 +1944,15 @@ const UI = {
         '<span class="mini">卖家 ' + t.seller + '</span>' +
         '<span class="mini">单价 <b style="color:#ffdf94">' + fmt(t.unit) + '</b></span>' +
         '<span class="mini">总价 <b style="color:#ffdf94">' + fmt(total) + '</b></span>');
-      const bInfo = el('button', 'btn', '查看');
-      bInfo.onclick = () => {
-        const inst2 = inst.type === 'gear' ? gearFromLink(gearToLink(inst, t.seller)) : inst;
-        inst2._isLink = true;
-        this.openItem(inst2, { link: true, owner: t.seller });
+      // 整行可点：弹出该挂单物品的信息面板（面板带关闭按钮）
+      row.style.cursor = 'pointer';
+      row.title = '点击查看这件物品的完整信息';
+      row.onclick = ev => {
+        if (ev && ev.target && ev.target.tagName === 'BUTTON') return;   // 点按钮时不重复弹面板
+        this.openMarketItem(t.lid);
       };
+      const bInfo = el('button', 'btn', '查看');
+      bInfo.onclick = () => this.openMarketItem(t.lid);
       row.appendChild(bInfo);
       if (t.mine) {
         const bCancel = el('button', 'btn', '下架');
