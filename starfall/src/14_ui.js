@@ -403,6 +403,42 @@ const UI = {
     this._tipKey = _k;
   },
 
+  /* ---------- 靠近资源点：自动信息面板 ----------
+   * 人物走近资源点时自动弹出（顶部居中，不挡视线），3 秒后淡出；
+   * 走开立即淡出（CSS 0.5s 过渡，慢慢消失）。 */
+  nodePop(nd) {
+    if (!nd) return this.nodePopHide();
+    const g = this.game, p = g.player;
+    const kindCN = { mine: '采矿点', log: '伐木点', herb: '采药点', bug: '捕虫点', fish: '渔点' }[nd.skill] || '资源点';
+    const nq = nodeQuality(nd.req);
+    const my = p.life[nd.skill].lv, ok = my >= (nd.req || 1);
+    let html = '<div class="npName" style="color:' + nq.color + '">' + g.nodeName(nd) + '</div>';
+    html += '<div class="npSub">' + kindCN + '　<b style="color:' + nq.color + '">' + nq.name + '</b>' +
+      (nd.rare ? '　<b style="color:#ff54e0">稀有</b>' : '') + '</div>';
+    html += '<div class="npRow">采集等级：<b class="' + (ok ? 'ok' : 'bad') + '">需要 Lv.' + (nd.req || 1) +
+      '</b>　当前 ' + SKILL_CN[nd.skill] + ' Lv.' + my + '</div>';
+    html += '<div class="npRow">剩余次数：<b style="color:#ffd76a">' +
+      (nd.skill === 'fish' ? '无限' : nd.amount + ' / ' + nd.max) + '</b>　单次 ' + g.gatherTime(nd).toFixed(1) + 's</div>';
+    html += '<div class="npRow">产出：<b style="color:#ffd76a">' +
+      (nd.skill === 'fish' ? g.fishPool(nd).slice(0, 3).map(f => f.name).join(' / ') + ' 等'
+        : (ITEMS[nd.itemId] ? ITEMS[nd.itemId].name : '材料')) + '</b>' +
+      (p.stats.doubleGather ? '　双倍 ' + Math.round(Math.min(95, p.stats.doubleGather)) + '%' : '') + '</div>';
+    html += '<div class="npFoot">左键 / E 打开采集面板（可批量 · 定时 · 无限循环）</div>';
+    const e = $('nodePop');
+    if (!e) return;
+    e.innerHTML = html;
+    e.classList.add('show');
+    if (this._npT) clearTimeout(this._npT);
+    this._npT = setTimeout(() => { this._npT = null; this.nodePopHide(); }, 3000);   // 持续 3 秒
+    this._npNd = nd;
+  },
+  nodePopHide() {
+    const e = $('nodePop');
+    if (e) e.classList.remove('show');                     // 淡出（CSS 过渡 0.5s）
+    if (this._npT) { clearTimeout(this._npT); this._npT = null; }
+    this._npNd = null;
+  },
+
   /* ---------- 技能悬浮信息 ---------- */
   tipSkill(sk, p, x, y) {
     if (!sk) { this.tipHide('skill'); return; }
@@ -2202,7 +2238,7 @@ const UI = {
     const state = el('div', 'idState');
     state.innerHTML = '状态：<b class="' + (Idle.running ? 'ok' : 'bad') + '">' + (Idle.running ? '挂机中' : '未运行') + '</b>' +
       '　队列任务 ' + Idle.queue.length + ' 项' +
-      '　<span class="mini">（挂机期间/离线后按此队列连续执行，规则与手动行为相同）</span>';
+      '　<span class="mini">（在线时人物自动前往资源点真实采集；离线后按此队列结算，规则与手动行为相同）</span>';
     B.appendChild(state);
     if (Idle.lastReport) B.appendChild(this.idleReportBlock(Idle.lastReport));
 
