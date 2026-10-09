@@ -209,7 +209,9 @@ function beginGame(g, isNew) {
   const ac = $('avatarCv').getContext('2d');
   ac.clearRect(0, 0, 96, 96);
   ac.drawImage(av, 0, 0, 96, 96);
-  g.cam.x = g.player.x - g.cam.w / 2; g.cam.y = g.player.y - g.cam.h / 2;
+  const _z = g.cam.zoom || 1;
+  g.cam.x = g.player.x - g.cam.w / _z / 2; g.cam.y = g.player.y - g.cam.h / _z / 2;
+  if (g.clampCam) g.clampCam();
   g.start();
   UI.log('欢迎来到《星落大陆》！', '#ffd76a');
   if (isNew) {
