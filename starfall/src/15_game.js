@@ -9,7 +9,9 @@ class Game {
     this.player = player; this.world = new World(20260810);
     this.monsters = []; this.fx = []; this.floats = [];
     this.keys = {}; this.mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false, overCanvas: false, cx: 0, cy: 0 };
-    this.cam = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    /* zoom：视野缩放（1 = 原始比例；>1 放大拉近，<1 缩小看更远）。双指 / 滚轮调节并存档 */
+    this.cam = { x: 0, y: 0, w: canvas.width, h: canvas.height, zoom: 1 };
+    this.cam.zoom = clamp((typeof Settings !== 'undefined' && Settings.data && Settings.data.zoom) || 1, 0.5, 2.5);
     this.inHome = false; this.targetMonster = null;
     this.gather = null; this.selectedBagIndex = -1;
     this.task = null; this.hover = null;   // 批量采集任务 / 当前悬停资源点
@@ -24,7 +26,10 @@ class Game {
     UI.init(this);
     if (typeof Mobile !== 'undefined') Mobile.init(this);   // 安卓 / 触屏：摇杆 + 触屏按钮 + 面板自适应
     if (!Market.list.length) Market.refreshNpc(true);   // 拍卖行：初始 NPC 货源
-    this.cam.x = player.x - canvas.width / 2; this.cam.y = player.y - canvas.height / 2;
+    const _z = this.cam.zoom || 1;
+    this.cam.x = player.x - canvas.width / _z / 2; this.cam.y = player.y - canvas.height / _z / 2;
+    this.clampCam();
+    if (typeof window !== 'undefined') window.GAME = this;   // 供设置模块实时调整画质 / 缩放
   }
 
   /* ================= 生命周期 ================= */
@@ -103,6 +108,12 @@ class Game {
     });
     addEventListener('mouseup', () => this.mouse.down = false);
     this.cv.addEventListener('contextmenu', e => e.preventDefault());
+    /* 滚轮缩放（桌面 / 模拟器调试用；手机走双指手势） */
+    this.cv.addEventListener('wheel', e => {
+      e.preventDefault();
+      const r = this.cv.getBoundingClientRect();
+      this.setZoom((this.cam.zoom || 1) * (e.deltaY > 0 ? 0.9 : 1.1), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
     addEventListener('resize', () => this.resize());
   }
   quickPotion() {
@@ -206,19 +217,16 @@ class Game {
       const joyOn = (typeof Mobile !== 'undefined' && Mobile.on && (Mobile.dx || Mobile.dy));
       if (this.mouse.down || joyOn || k['w'] || k['a'] || k['s'] || k['d']) UI.touch();
     }
-    this.mouse.worldX = this.cam.x + this.mouse.x; this.mouse.worldY = this.cam.y + this.mouse.y;
+    const z = this.cam.zoom || 1;
+    this.mouse.worldX = this.cam.x + this.mouse.x / z; this.mouse.worldY = this.cam.y + this.mouse.y / z;
     p.aimAngle = angleOf(p.x, p.y - 8, this.mouse.worldX, this.mouse.worldY);
     if (!p.dead) this.movePlayer(dt);
     p.update(dt, this);
-    // 摄像机跟随
-    const cx = p.x - this.cam.w / 2, cy = p.y - this.cam.h / 2;
+    // 摄像机跟随（可视世界范围 = 屏幕尺寸 / 缩放，保证主角始终居中）
+    const vw = this.cam.w / z, vh = this.cam.h / z;
+    const cx = p.x - vw / 2, cy = p.y - vh / 2;
     this.cam.x = lerp(this.cam.x, cx, 0.14); this.cam.y = lerp(this.cam.y, cy, 0.14);
-    this.cam.x = clamp(this.cam.x, 0, WORLD_SIZE * TILE_PX - this.cam.w);
-    this.cam.y = clamp(this.cam.y, 0, WORLD_SIZE * TILE_PX - this.cam.h);
-    if (this.inHome) {
-      this.cam.x = clamp(p.x - this.cam.w / 2, -32, HOME_SIZE * TILE_PX - this.cam.w + 32);
-      this.cam.y = clamp(p.y - this.cam.h / 2, -32, HOME_SIZE * TILE_PX - this.cam.h + 32);
-    }
+    this.clampCam();
     // 世界
     if (!this.inHome) {
       this.world.update(dt);
@@ -845,13 +853,46 @@ class Game {
     this.player.x = tx * TILE_PX + 16; this.player.y = ty * TILE_PX + 16;
     this.player.unlockedRegions[r.key] = 1;
     this.inHome = false;
-    this.cam.x = this.player.x - this.cam.w / 2; this.cam.y = this.player.y - this.cam.h / 2;
+    const _z = this.cam.zoom || 1;
+    this.cam.x = this.player.x - this.cam.w / _z / 2; this.cam.y = this.player.y - this.cam.h / _z / 2;
+    this.clampCam();
     this.monsters.length = 0;
     UI.toast('抵达 ' + r.name, '#9fe8ff');
     UI.log('抵达 ' + r.name + '：' + r.desc, '#9fe8ff');
     Ach.check(this);
   }
   teleportTo(x, y) { this.player.x = x; this.player.y = y; this.inHome = false; }
+
+  /* ================= 视野缩放 ================= */
+  /** 可视世界范围（世界像素），随缩放变化 */
+  camView() {
+    const z = this.cam.zoom || 1;
+    return { x: this.cam.x, y: this.cam.y, w: this.cam.w / z, h: this.cam.h / z, zoom: z };
+  }
+  /** 边界收敛：缩放后可视范围变化，需按新的可视宽高重新夹取 */
+  clampCam() {
+    const z = this.cam.zoom || 1, vw = this.cam.w / z, vh = this.cam.h / z;
+    if (this.inHome) {
+      this.cam.x = clamp(this.cam.x, -32, HOME_SIZE * TILE_PX - vw + 32);
+      this.cam.y = clamp(this.cam.y, -32, HOME_SIZE * TILE_PX - vh + 32);
+      return;
+    }
+    this.cam.x = clamp(this.cam.x, 0, Math.max(0, WORLD_SIZE * TILE_PX - vw));
+    this.cam.y = clamp(this.cam.y, 0, Math.max(0, WORLD_SIZE * TILE_PX - vh));
+  }
+  /** 设置缩放：以屏幕锚点为中心缩放（默认屏幕中心 = 主角），并写入存档 */
+  setZoom(z, ax, ay) {
+    const cam = this.cam, old = cam.zoom || 1;
+    const nz = clamp(+z || 1, 0.5, 2.5);
+    if (Math.abs(nz - old) < 0.002) return old;
+    const sx = (ax === undefined ? cam.w / 2 : ax), sy = (ay === undefined ? cam.h / 2 : ay);
+    const wx = cam.x + sx / old, wy = cam.y + sy / old;      // 锚点对应的世界坐标保持不变
+    cam.zoom = nz;
+    cam.x = wx - sx / nz; cam.y = wy - sy / nz;
+    this.clampCam();
+    if (typeof Settings !== 'undefined' && Settings.data) { Settings.data.zoom = nz; Settings.save(); }
+    return nz;
+  }
 
   /* ================= 工具 ================= */
   floatText(ent, text, color, big) { this.floats.push({ x: ent.x + rnd(-8, 8), y: ent.y - ent.maxHp * 0 - 40, text: text, color: color, t: big ? 1.4 : 1.0, big: big }); }
@@ -862,11 +903,14 @@ class Game {
   /* ================= 渲染 ================= */
   render(dt) {
     const ctx = this.ctx, cam = this.cam;
+    const z = cam.zoom || 1;
+    const view = this.camView();                  // 剔除用可视世界范围（已含缩放）
     ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, cam.w, cam.h);
     ctx.save();
+    ctx.scale(z, z);                              // 瓦片地图随缩放一起放大 / 缩小
     ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
-    if (this.inHome) this.home.draw(ctx, cam);
-    else this.world.draw(ctx, cam);
+    if (this.inHome) this.home.draw(ctx, view);
+    else this.world.draw(ctx, view);
     this.drawFx(ctx);
     // 鼠标悬停的资源点高亮
     if (this.hover) {
@@ -914,10 +958,11 @@ class Game {
     if (!this.inHome) this.drawMinimap();
     if (this.interactHint) {
       ctx.font = '14px "PingFang SC",sans-serif'; ctx.textAlign = 'center';
-      const y = this.player.y - 60 - cam.y;
+      const py = (this.player.y - cam.y) * z;     // 世界 → 屏幕（含缩放）
+      const y = py - 60;
       ctx.fillStyle = 'rgba(8,12,24,.8)';
       const wpx = ctx.measureText(this.interactHint).width + 20;
-      ctx.fillRect(cam.w / 2 - wpx / 2, this.player.y - cam.y - 78, wpx, 22);
+      ctx.fillRect(cam.w / 2 - wpx / 2, py - 78, wpx, 22);
       ctx.fillStyle = '#ffd76a';
       ctx.fillText(this.interactHint, cam.w / 2, y - 62);
       ctx.textAlign = 'left';
@@ -946,7 +991,8 @@ class Game {
     if (dusk > 0.01) { ctx.fillStyle = 'rgba(255,146,70,' + (dusk * 0.13).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
     if (dawn > 0.01) { ctx.fillStyle = 'rgba(255,190,140,' + (dawn * 0.10).toFixed(3) + ')'; ctx.fillRect(0, 0, w, h); }
     if (night > 0.05) {                            // 提灯暖光
-      const sx = this.player.x - cam.x, sy = this.player.y - cam.y;
+      const z = this.cam.zoom || 1;
+      const sx = (this.player.x - cam.x) * z, sy = (this.player.y - cam.y) * z;
       const g = ctx.createRadialGradient(sx, sy, 20, sx, sy, 250);
       g.addColorStop(0, 'rgba(255,200,120,' + (night * 0.20).toFixed(3) + ')');
       g.addColorStop(1, 'rgba(255,200,120,0)');
@@ -984,6 +1030,7 @@ class Game {
   updateAmbient(dt) {
     if (this.inHome) return;
     const p = this.player, cam = this.cam;
+    const z = cam.zoom || 1, vw = cam.w / z, vh = cam.h / z;   // 可视世界范围（粒子按世界坐标飘动）
     const kind = this.ambientKind();
     if (this._ambKind !== kind) { this._ambKind = kind; this.ambient = []; }
     if (!this.ambient) this.ambient = [];
@@ -992,7 +1039,7 @@ class Game {
     const pal = (r && r.pal) || null;
     while (this.ambient.length < want) {
       this.ambient.push({
-        x: cam.x + rnd(0, cam.w), y: cam.y + rnd(0, cam.h),
+        x: cam.x + rnd(0, vw), y: cam.y + rnd(0, vh),
         vx: rnd(-10, 10), vy: 0, s: rnd(1, 2.6), ph: rnd(0, 6.28)
       });
     }
@@ -1008,11 +1055,11 @@ class Game {
       q.ph += dt * 1.7;
       q.y += cfg.vy * dt;
       q.x += (cfg.vx || 0) * dt + Math.sin(q.ph) * cfg.sway * dt;
-      /* 飘出视野就绕回另一侧，保持恒定密度 */
-      if (q.y > cam.y + cam.h + 8) { q.y = cam.y - 8; q.x = cam.x + rnd(0, cam.w); }
-      if (q.y < cam.y - 8) { q.y = cam.y + cam.h + 8; q.x = cam.x + rnd(0, cam.w); }
-      if (q.x > cam.x + cam.w + 8) q.x = cam.x - 8;
-      if (q.x < cam.x - 8) q.x = cam.x + cam.w + 8;
+      /* 飘出视野就绕回另一侧，保持恒定密度（视野随缩放变化，用可视世界范围判断） */
+      if (q.y > cam.y + vh + 8) { q.y = cam.y - 8; q.x = cam.x + rnd(0, vw); }
+      if (q.y < cam.y - 8) { q.y = cam.y + vh + 8; q.x = cam.x + rnd(0, vw); }
+      if (q.x > cam.x + vw + 8) q.x = cam.x - 8;
+      if (q.x < cam.x - 8) q.x = cam.x + vw + 8;
     }
     void cfg.vx;
   }
@@ -1027,11 +1074,12 @@ class Game {
       petal: (pal && pal.flower && pal.flower[0]) || '#ffc0d8'
     }[kind];
     const a = { snow: .75, sand: .45, leaf: .60, spark: .55, spray: .40, petal: .55 }[kind] || .5;
+    const z = cam.zoom || 1;
     ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
     for (const q of this.ambient) {
-      const sx = q.x - cam.x, sy = q.y - cam.y;
+      const sx = (q.x - cam.x) * z, sy = (q.y - cam.y) * z;   // 世界 → 屏幕
       if (sx < -6 || sy < -6 || sx > cam.w + 6 || sy > cam.h + 6) continue;
-      ctx.fillRect(sx, sy, q.s, q.s);
+      ctx.fillRect(sx, sy, Math.max(1, q.s * z), Math.max(1, q.s * z));
     }
     ctx.restore();
   }
@@ -1187,7 +1235,9 @@ class Game {
         g.homeExit = g.world.homeEntry;
         g.homeExit = { x: g.world.homeEntry.x * TILE_PX, y: g.world.homeEntry.y * TILE_PX };
       }
-      g.cam.x = p.x - canvas.width / 2; g.cam.y = p.y - canvas.height / 2;
+      const _z = g.cam.zoom || 1;
+      g.cam.x = p.x - canvas.width / _z / 2; g.cam.y = p.y - canvas.height / _z / 2;
+      g.clampCam();
       // 拍卖行与离线挂机
       Market.load(d.market);
       Idle.load(d.idle);
