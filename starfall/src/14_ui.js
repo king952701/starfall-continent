@@ -455,6 +455,111 @@ const UI = {
   },
   fitPanels() { for (const k in this.panels) this.fitPanel(k); },
 
+  /* ---------- 第三方资源致谢页（中英双语 / 可点击跳转） ---------- */
+  creditList: [
+    {
+      name: 'Kenney 游戏美术素材（地表瓦片）', en: 'Kenney Game Assets (terrain tiles)',
+      by: 'Kenney（www.kenney.nl）', lic: 'CC0 1.0 公共领域 / Public Domain',
+      url: 'https://kenney.nl/assets', note: '地形瓦片经按区域重新染色后使用'
+    },
+    {
+      name: 'Apache Cordova', en: 'Apache Cordova（Android 打包框架）',
+      by: 'Apache Software Foundation', lic: 'Apache-2.0',
+      url: 'https://cordova.apache.org/', note: '将网页游戏打包为 Android 安装包'
+    },
+    {
+      name: 'cordova-android', en: 'Cordova Android Platform',
+      by: 'Apache Software Foundation', lic: 'Apache-2.0',
+      url: 'https://github.com/apache/cordova-android', note: 'Android 平台适配层'
+    },
+    {
+      name: 'Node.js', en: 'Node.js（构建脚本工具链）',
+      by: 'OpenJS Foundation', lic: 'MIT',
+      url: 'https://nodejs.org/', note: '上传与打包脚本运行环境'
+    },
+    {
+      name: 'GitHub Actions', en: 'GitHub Actions（云端自动化构建）',
+      by: 'GitHub, Inc.', lic: '专有服务 / Proprietary service',
+      url: 'https://github.com/features/actions', note: '自动化编译并产出 APK'
+    },
+    {
+      name: '系统字体', en: 'System fonts（PingFang SC / Noto Sans / system-ui）',
+      by: '操作系统自带 / Provided by the OS', lic: '未引入任何第三方字体 / No bundled third-party font',
+      url: '', note: '界面文字使用系统字体'
+    }
+  ],
+  /** 用系统浏览器打开外链（Cordova 环境下走 _system） */
+  openLink(url) {
+    if (!url) return;
+    try {
+      if (typeof window !== 'undefined' && window.cordova && window.cordova.InAppBrowser) {
+        window.cordova.InAppBrowser.open(url, '_system'); return;
+      }
+      const w = typeof window !== 'undefined' && window.open ? window.open(url, '_system') : null;
+      if (!w && typeof window !== 'undefined' && window.open) window.open(url, '_blank');
+    } catch (e) {
+      try { if (typeof window !== 'undefined' && window.open) window.open(url, '_blank'); } catch (e2) { /* 忽略 */ }
+    }
+  },
+  showCredits() {
+    if (this._credits) { this._credits.style.display = ''; this.touch && this.touch(); return; }
+    const mask = el('div', 'creditsMask');
+    const box = el('div', 'creditsBox');
+
+    const head = el('div', 'crHead');
+    head.appendChild(el('span', 'crTitle', '致 谢 / Credits'));
+    const closer = el('span', 'pclose', '✕ 关闭');
+    closer.title = '关闭';
+    closer.onclick = () => { mask.style.display = 'none'; this.touch && this.touch(); };
+    head.appendChild(closer);
+    box.appendChild(head);
+
+    const body = el('div', 'crBody');
+    body.appendChild(el('p', 'crP',
+      '《星落大陆》是一款原创的 2D 开放世界沙盒 RPG。地表瓦片采用 CC0 公共领域素材并按大区重新染色；' +
+      '角色立绘、图标、界面与全部特效均由本项目自研的程序化绘图系统实时生成，未使用任何受版权保护的美术或音频资源。' +
+      '在此向所有让本项目成为可能的开源作者致以诚挚谢意。'));
+    body.appendChild(el('p', 'crP en',
+      'Starlit Continent is an original 2D open-world sandbox RPG. Terrain tiles are CC0 public-domain assets, ' +
+      're-tinted per region. All characters, icons, UI elements and visual effects are generated at runtime by this ' +
+      'project’s own procedural drawing system. No copyrighted artwork or audio is used. ' +
+      'Our sincere thanks to every open-source author who made this possible.'));
+    body.appendChild(el('div', 'crSec', '第三方资源 / Third-party resources（点击名称前往原站）'));
+
+    for (const c of this.creditList) {
+      const row = el('div', 'crItem');
+      if (c.url) {
+        const a = el('a', 'crLink', c.name + ' · ' + c.en + '  ↗');
+        a.href = c.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = c.url;
+        a.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.openLink(c.url); };
+        row.appendChild(a);
+      } else {
+        row.appendChild(el('span', 'crName', c.name + ' · ' + c.en));
+      }
+      row.appendChild(el('div', 'crMeta', '作者 / Author：' + c.by + '　　许可 / License：' + c.lic));
+      if (c.note) row.appendChild(el('div', 'crMeta', '用途 / Usage：' + c.note));
+      body.appendChild(row);
+    }
+
+    body.appendChild(el('div', 'crSec', '原创内容 / Original content'));
+    body.appendChild(el('p', 'crP',
+      '游戏设计、程序代码、程序化美术与全部文案：本项目开发团队（原创）。音乐与音效：本项目未内置任何音频。' +
+      '如你对本项目有任何意见或建议，欢迎通过仓库 Issues 反馈。'));
+    body.appendChild(el('p', 'crP en',
+      'Game design, source code, procedural art and all writing: this project’s development team (original work). ' +
+      'Music & SFX: none bundled. Feedback is welcome via the repository Issues.'));
+
+    const foot = el('div', 'crFoot');
+    const bOk = el('button', 'btn gold', '知道了，开始旅程 / Got it');
+    bOk.onclick = () => { mask.style.display = 'none'; this.touch && this.touch(); };
+    foot.appendChild(bOk);
+    box.appendChild(body); box.appendChild(foot); mask.appendChild(box);
+    (typeof document !== 'undefined' && document.body ? document.body : this.elRoot).appendChild(mask);
+    this._credits = mask;
+    this.touch && this.touch();
+    return mask;
+  },
+
   panel(name, title, w, h, x, y) {
     if (this.panels[name]) {
       const old = this.panels[name];
