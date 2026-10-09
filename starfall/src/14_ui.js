@@ -153,6 +153,22 @@ const UI = {
       const r = g.inHome ? { name: '私人家园' } : regionAtTile(tile.tx, tile.ty);
       $('regionName').textContent = r.name;
       $('coord').textContent = g.inHome ? '实例空间' : (tile.tx + ', ' + tile.ty);
+      /* 天气 + 时段（HUD 左上，和区域信息同频刷新） */
+      if (typeof Weather !== 'undefined') {
+        const wEl = $('weather');
+        if (wEl) {
+          const wt = Weather.hud();
+          if (wEl.textContent !== wt.t) { wEl.textContent = wt.t; wEl.style.color = wt.c; }
+        }
+      }
+      const cl = $('clock');
+      if (cl) {
+        const DAY = 480, ph = ((g.timeSec % DAY) + DAY) % DAY / DAY;
+        const hh = Math.floor(ph * 24), mm = Math.floor((ph * 24 % 1) * 60);
+        const pd = g.inHome ? '家园' : (ph < 0.06 || ph > 0.94 ? '黎明' : ph < 0.42 ? '白昼' : ph < 0.62 ? '黄昏' : '夜晚');
+        const s = pd + ' ' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+        if (cl.textContent !== s) cl.textContent = s;
+      }
       if (this.panels.bag) this.refreshBag();
     }
     // 目标
