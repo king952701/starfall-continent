@@ -25,46 +25,106 @@ const Sprites = {
   key(k, fn) { if (!this._cache[k]) this._cache[k] = fn(); return this._cache[k]; },
 
   /* ==================== 地形 ==================== */
+  /* 地形贴图统一按 TILE_PX（32px）绘制：早期 16px 只填满格子左上角，地表显得粗糙断裂 */
   groundTile(key, pal, seed, variant) {
     return this.key('gt' + key + variant, () => {
-      const o = CV(16, 16), x = o.x, base = pal.ground[variant % pal.ground.length];
-      R(x, 0, 0, 16, 16, base);
-      const rndr = mulberry32(seed * 977 + variant * 31);
-      for (let i = 0; i < 26; i++) {
-        const px = Math.floor(rndr() * 16), py = Math.floor(rndr() * 16), s = rndr();
-        R(x, px, py, 1, 1, s > .75 ? shade(base, 18) : shade(base, -14));
+      const S = TILE_PX, o = CV(S, S), x = o.x;
+      const g = pal.ground || ['#5c8a45'];
+      const base = shade(g[variant % g.length], variant >= g.length ? ((variant % 2) ? 5 : -5) : 0);
+      R(x, 0, 0, S, S, base);
+      const rr = mulberry32(Math.abs(seed | 0) * 977 + variant * 131 + 7);
+      /* 低频色斑：打破整片纯色 */
+      for (let i = 0; i < 6; i++) {
+        const w = 6 + Math.floor(rr() * 13), h = 5 + Math.floor(rr() * 11);
+        const px = Math.floor(rr() * (S - w)), py = Math.floor(rr() * (S - h));
+        R(x, px, py, w, h, shade(base, rr() > .5 ? 7 : -7));
       }
-      if (variant === 1) { // 草簇变体
-        for (let i = 0; i < 3; i++) {
-          const px = 2 + Math.floor(rndr() * 11), py = 3 + Math.floor(rndr() * 10);
-          R(x, px, py, 1, 2, shade(pal.grill || pal.grass, 10)); R(x, px, py + 2, 1, 1, shade(pal.grass, -20));
+      /* 中频颗粒 + 高频细点：两层噪点让地表有质感 */
+      for (let i = 0; i < 48; i++) {
+        const px = Math.floor(rr() * S), py = Math.floor(rr() * S);
+        R(x, px, py, 1, 1, rr() > .55 ? shade(base, 16) : shade(base, -16));
+      }
+      for (let i = 0; i < 34; i++) {
+        const px = Math.floor(rr() * S), py = Math.floor(rr() * S);
+        R(x, px, py, 1, 1, rr() > .5 ? shade(base, 9) : shade(base, -11));
+      }
+      const grass = pal.grass || shade(base, 22), rock = pal.rock || '#7d7d86';
+      const dirt = pal.dirt || shade(base, -20);
+      if (variant === 1) {                                   // 草簇
+        for (let i = 0; i < 6; i++) {
+          const px = 2 + Math.floor(rr() * (S - 4)), py = 4 + Math.floor(rr() * (S - 9));
+          R(x, px, py, 1, 3, shade(grass, 12));
+          R(x, px - 1, py + 1, 1, 2, shade(grass, -10));
+          R(x, px + 1, py + 2, 1, 2, shade(grass, -18));
         }
       }
-      if (variant === 2) { // 小花
-        const px = 3 + Math.floor(rndr() * 9), py = 4 + Math.floor(rndr() * 8);
-        R(x, px, py, 1, 1, pal.flower[Math.floor(rndr() * pal.flower.length)]);
+      if (variant === 2) {                                   // 小花
+        for (let i = 0; i < 3; i++) {
+          const px = 3 + Math.floor(rr() * (S - 6)), py = 4 + Math.floor(rr() * (S - 9));
+          const fl = (pal.flower || ['#ffd76a']);
+          R(x, px, py, 1, 1, fl[Math.floor(rr() * fl.length)]);
+          R(x, px, py + 1, 1, 2, shade(grass, -14));
+        }
+      }
+      if (variant === 3) {                                   // 碎石
+        for (let i = 0; i < 4; i++) {
+          const px = 3 + Math.floor(rr() * (S - 9)), py = 3 + Math.floor(rr() * (S - 9));
+          R(x, px, py, 3, 2, shade(rock, -8));
+          R(x, px, py, 3, 1, shade(rock, 16));
+          R(x, px, py + 2, 3, 1, 'rgba(0,0,0,.18)');
+        }
+      }
+      if (variant === 4) {                                   // 干裂 / 土斑
+        for (let i = 0; i < 5; i++) {
+          const px = Math.floor(rr() * (S - 8)), py = Math.floor(rr() * (S - 2));
+          R(x, px, py, 5 + Math.floor(rr() * 7), 1, shade(dirt, -6));
+        }
+        R(x, 0, 0, S, 1, shade(base, -10));                  // 上缘轻描边，格与格有层次
+      }
+      if (variant === 5) {                                   // 苔藓 / 深色斑块
+        for (let i = 0; i < 3; i++) {
+          CIRC(x, 4 + rr() * (S - 8), 4 + rr() * (S - 8), 3 + rr() * 2, shade(base, -15));
+        }
       }
       return o.c;
     });
   },
   waterTile(key, pal, frame) {
     return this.key('wt' + key + frame, () => {
-      const o = CV(16, 16), x = o.x, b = pal.water;
-      R(x, 0, 0, 16, 16, b);
-      for (let i = 0; i < 4; i++) {
-        const y = (i * 4 + frame * 2) % 16;
-        R(x, 0, y, 16, 1, shade(b, 22));
-        R(x, ((i % 2) ? 5 : 0) + frame, y + 1, 6, 1, shade(b, 34));
+      const S = TILE_PX, o = CV(S, S), x = o.x, b = pal.water;
+      R(x, 0, 0, S, S, b);
+      const rr = mulberry32(frame * 977 + 31);
+      for (let i = 0; i < 4; i++) {                          // 深浅水带
+        const y = (i * 8 + frame * 3) % S;
+        R(x, 0, y, S, 2, shade(b, rr() > .5 ? 13 : 9));
+      }
+      for (let i = 0; i < 6; i++) {                          // 波纹高光
+        const y = (i * 5 + frame * 2) % S, w = 6 + Math.floor(rr() * 11);
+        R(x, Math.floor(rr() * (S - w)), y, w, 1, shade(b, 26));
+      }
+      for (let i = 0; i < 5; i++) {                          // 波谷
+        R(x, 0, (i * 6 + 3 + frame) % S, S, 1, shade(b, -14));
+      }
+      for (let i = 0; i < 10; i++) {                         // 细碎反光
+        R(x, Math.floor(rr() * S), Math.floor(rr() * S), 1, 1, shade(b, 34));
       }
       return o.c;
     });
   },
   mountainTile(key, pal) {
     return this.key('mt' + key, () => {
-      const o = CV(16, 16), x = o.x, b = pal.mountain;
-      R(x, 0, 0, 16, 16, b);
-      for (let i = 0; i < 8; i++) R(x, (i * 5 + 2) % 14, (i * 7 + 1) % 14, 3, 2, shade(b, 20));
-      R(x, 0, 0, 16, 1, shade(b, -30));
+      const S = TILE_PX, o = CV(S, S), x = o.x, b = pal.mountain;
+      R(x, 0, 0, S, S, b);
+      const rr = mulberry32(4242);
+      for (let i = 0; i < 10; i++) {                         // 岩块层理
+        R(x, Math.floor(rr() * (S - 5)), Math.floor(rr() * (S - 4)), 4 + Math.floor(rr() * 5), 3, shade(b, rr() > .5 ? 18 : -14));
+      }
+      for (let i = 0; i < 30; i++) {                         // 颗粒
+        R(x, Math.floor(rr() * S), Math.floor(rr() * S), 1, 1, rr() > .5 ? shade(b, 22) : shade(b, -20));
+      }
+      R(x, 0, 0, S, 3, shade(b, 16));                        // 顶部受光
+      R(x, 0, S - 4, S, 4, shade(b, -22));                   // 底部阴影
+      R(x, 0, 0, S, 1, shade(b, 24));
       return o.c;
     });
   },
