@@ -215,7 +215,21 @@ const Mobile = {
       g.mouse.cx = t.clientX; g.mouse.cy = t.clientY; g.mouse.overCanvas = true;
     };
     let longT = null, moved = false, startX = 0, startY = 0;
+    /* 双指缩放：记录起始指间距与缩放值，移动时按比例调整（瓦片地图与相机跟随一起缩放） */
+    let pinch = false, pDist = 0, pZoom = 1, pZoom0 = 1;
+    const twoDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+    const pinchAnchor = ts => {
+      const r = cv.getBoundingClientRect();
+      return { x: (ts[0].clientX + ts[1].clientX) / 2 - r.left, y: (ts[0].clientY + ts[1].clientY) / 2 - r.top };
+    };
     cv.addEventListener('touchstart', e => {
+      if (e.touches.length >= 2 && g.setZoom) {                   // 双指落下 → 进入缩放
+        pinch = true; moved = true; g.mouse.down = false;
+        if (longT) { clearTimeout(longT); longT = null; }
+        pDist = twoDist(e.touches); pZoom = pZoom0 = g.cam.zoom || 1;
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
       const t = e.changedTouches[0]; if (!t) return;
       pos(t); moved = false; startX = t.clientX; startY = t.clientY;
       longT = setTimeout(() => {                                  // 长按 = 锁定怪物（等价鼠标右键）
@@ -225,6 +239,12 @@ const Mobile = {
       e.preventDefault();
     }, { passive: false });
     cv.addEventListener('touchmove', e => {
+      if (pinch && e.touches.length >= 2 && g.setZoom) {
+        const d = twoDist(e.touches), a = pinchAnchor(e.touches);
+        if (pDist > 10 && d > 10) { pZoom = g.setZoom(pZoom0 * (d / pDist), a.x, a.y); }
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
       const t = e.changedTouches[0]; if (!t) return;
       pos(t); g.mouse.down = true;                                // 按住拖动 = 持续普通攻击
       if (Math.hypot(t.clientX - startX, t.clientY - startY) > 12) {
@@ -233,6 +253,14 @@ const Mobile = {
       e.preventDefault();
     }, { passive: false });
     cv.addEventListener('touchend', e => {
+      if (pinch) {
+        if (e.touches.length < 2) {                               // 双指全部抬起 → 结束缩放
+          pinch = false; g.mouse.down = false;
+          if (Math.abs((g.cam.zoom || 1) - 1) > 0.04) UI.toast('视野 ×' + (g.cam.zoom || 1).toFixed(2), '#9fe8b8');
+        }
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
       const t = e.changedTouches[0]; if (!t) return;
       pos(t); g.mouse.down = false;
       if (longT) { clearTimeout(longT); longT = null; }
@@ -254,6 +282,7 @@ const Mobile = {
     const portrait = window.innerHeight > window.innerWidth;
     document.body.classList.toggle('portrait', portrait);
     document.body.classList.toggle('landscape', !portrait);
+    if (this.game && this.game.clampCam) this.game.clampCam();   // 旋转 / 尺寸变化后重新收敛相机边界
     this.fitPanels();
   },
   /** 把所有面板缩放到可视区内并居中（手机竖屏 / 小屏也能看完面板） */
