@@ -111,6 +111,22 @@ const Sprites = {
       return o.c;
     });
   },
+  /** 草丛摆动：透明叠加层，2 帧左右轻微偏移（叠在地面贴图之上，运行时逐帧切换） */
+  grassTuft(key, pal, v, frame) {
+    return this.key('tuft' + key + v + frame, () => {
+      const S = TILE_PX, o = CV(S, S), x = o.x;
+      const grass = pal.grass || '#8fc45a';
+      const rr = mulberry32(v * 977 + 313);
+      for (let i = 0; i < 6; i++) {
+        const px = 3 + Math.floor(rr() * (S - 6)), py = 5 + Math.floor(rr() * (S - 10));
+        const sway = frame ? 1 : 0;                        // 第 2 帧整体右倾 1px，形成摆动
+        R(x, px + sway, py, 1, 3, shade(grass, 14));
+        R(x, px - 1 + sway, py + 1, 1, 2, shade(grass, -8));
+        R(x, px + 1 + (frame ? 0 : 1), py + 2, 1, 2, shade(grass, -18));
+      }
+      return o.c;
+    });
+  },
   mountainTile(key, pal) {
     return this.key('mt' + key, () => {
       const S = TILE_PX, o = CV(S, S), x = o.x, b = pal.mountain;
