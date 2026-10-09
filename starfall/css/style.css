@@ -399,6 +399,28 @@ body.mobile .crP{font-size:12px}
 body.mobile .crP.en{font-size:11px}
 body.mobile .crLink,body.mobile .crName{font-size:12px}
 
+/* ---------- 设置面板 ---------- */
+.setSec{margin:10px 0 5px;font-size:13px;color:var(--gold);border-left:3px solid var(--gold);padding-left:6px}
+.setRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.setLab{min-width:88px;font-size:12px;color:#c9d4ef}
+.setVal{min-width:30px;text-align:right;font-size:12px;color:#ffd76a}
+.setRange{width:180px;flex:1 1 120px;min-width:120px;accent-color:#ffd76a}
+.setBtns{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
+body.mobile .setRange{width:100%;min-width:100%}
+body.mobile .setLab{min-width:70px}
+body.mobile .setBtns .btn{padding:6px 8px;font-size:12px}
+
+/* ---------- UI 调整模式 ---------- */
+body.uiEdit .uiEditing{pointer-events:auto;outline:1px dashed rgba(255,215,106,.85);outline-offset:2px;
+  touch-action:none;cursor:move}
+.uiHandle{position:absolute;right:-6px;bottom:-6px;width:18px;height:18px;line-height:18px;text-align:center;
+  font-style:normal;font-size:12px;color:#0b1020;background:var(--gold);border-radius:50%;
+  cursor:nwse-resize;display:none;z-index:99;pointer-events:auto}
+body.uiEdit .uiEditing>.uiHandle{display:block}
+#uiEditBar{position:fixed;left:50%;transform:translateX(-50%);bottom:8px;z-index:9998;
+  display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(8,12,24,.95);
+  border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.6);max-width:96vw;flex-wrap:wrap}
+
 /* Tab 资源导航地图：整体不超出屏幕并可滚动 */
 body.mobile #ovBox{max-width:96vw;max-height:94vh;display:flex;flex-direction:column}
 body.mobile .ovBody{max-height:86vh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
@@ -417,16 +439,27 @@ body.mobile .joy{display:block}
   background:radial-gradient(circle at 40% 35%,#ffe6a0,#c9962f);border:1px solid #ffe6a0;
   box-shadow:0 0 12px rgba(255,215,106,.6)}
 
-/* 右下动作按钮 */
-.mActs{position:absolute;right:14px;bottom:96px;z-index:30;pointer-events:auto;display:none;
-  flex-direction:column;gap:8px;align-items:center}
+/* 右下动作按钮（整体再缩小一档，适配各类安卓屏） */
+.mActs{position:absolute;right:10px;bottom:80px;z-index:30;pointer-events:auto;display:none;
+  flex-direction:column;gap:6px;align-items:center}
 body.mobile .mActs{display:flex}
-.mbtn{width:54px;height:54px;line-height:54px;text-align:center;border-radius:50%;
+/* 横屏中部：采集 / 交互（水平居中，按屏高比例定位） */
+.mMid{position:absolute;left:50%;transform:translateX(-50%);bottom:26%;z-index:30;pointer-events:auto;
+  display:none;gap:10px;align-items:center}
+body.mobile .mMid{display:flex}
+body.mobile.landscape .mMid{bottom:22%}
+.mbtn{width:42px;height:42px;line-height:42px;text-align:center;border-radius:50%;
   background:linear-gradient(180deg,rgba(29,39,72,.92),rgba(10,14,28,.92));border:1px solid var(--gold);
-  color:var(--gold);font-size:13px;letter-spacing:1px;box-shadow:0 4px 14px rgba(0,0,0,.55)}
-.mbtn.big{width:72px;height:72px;line-height:72px;font-size:16px;background:linear-gradient(180deg,#4a2340,#1a0f22);border-color:#ff9ac0;color:#ffd0e2}
+  color:var(--gold);font-size:11px;letter-spacing:0;box-shadow:0 3px 10px rgba(0,0,0,.55)}
+.mbtn.big{width:56px;height:56px;line-height:56px;font-size:13px;background:linear-gradient(180deg,#4a2340,#1a0f22);border-color:#ff9ac0;color:#ffd0e2}
 .mbtn.mid{background:linear-gradient(180deg,#1c3a2c,#0d1c18);border-color:#7fdba4;color:#bff5d2}
 .mbtn.hit{filter:brightness(1.7)}
+@media (max-height:420px){                         /* 更矮的机型再收一档 */
+  .mbtn{width:38px;height:38px;line-height:38px;font-size:10px}
+  .mbtn.big{width:50px;height:50px;line-height:50px;font-size:12px}
+  .mMid{bottom:18%}
+  .mActs{bottom:66px}
+}
 
 /* 面板快捷菜单 */
 .mMenu{position:absolute;right:14px;bottom:20px;z-index:31;pointer-events:auto;display:none}
@@ -438,9 +471,10 @@ body.mobile .mMenu{display:block}
 .mMenuBtn{padding:8px 10px;min-width:56px;text-align:center;border:1px solid var(--line);
   background:#111830;color:#cfe8b8;font-size:12px;cursor:pointer}
 .mMenuBtn.hit{background:#24305a;color:var(--gold)}
-.mMenuToggle{position:absolute;right:0;bottom:0;width:56px;height:56px;line-height:56px;text-align:center;
+.mMenuToggle{position:absolute;right:0;bottom:0;width:44px;height:44px;line-height:44px;text-align:center;
   border-radius:50%;background:linear-gradient(180deg,#1d2748,#0d1226);border:1px solid var(--gold);
-  color:var(--gold);font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.55)}
+  color:var(--gold);font-size:11px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.55)}
+.mMenuBtn{padding:6px 8px;min-width:48px;font-size:11px}
 
 /* 竖屏提醒（横屏游玩体验最佳） */
 body.mobile.portrait #rotateTip{display:flex}
