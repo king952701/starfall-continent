@@ -231,11 +231,14 @@ class Game {
     if (!this.inHome) {
       this.world.update(dt);
       this.spawnT -= dt;
-      if (this.spawnT <= 0) { this.spawnT = 1.2; this.updateSpawns(); }
+      /* 天气影响刷怪节奏：雷暴时怪物更活跃 */
+      const smul = (typeof Weather !== 'undefined' && Weather.spawnMul) ? Weather.spawnMul() : 1;
+      if (this.spawnT <= 0) { this.spawnT = 1.2 / Math.max(0.2, smul); this.updateSpawns(); }
     } else {
       this.home.update(dt);
     }
-    this.updateAmbient(dt);                        // 环境粒子（雪 / 沙 / 落叶 / 萤火）
+    this.updateAmbient(dt);
+    if (typeof Weather !== 'undefined') Weather.update(dt, this);   // 天气 AI + 天气粒子                        // 环境粒子（雪 / 沙 / 落叶 / 萤火）
     // 实体
     for (let i = this.monsters.length - 1; i >= 0; i--) {
       const m = this.monsters[i];
@@ -912,6 +915,7 @@ class Game {
     ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
     if (this.inHome) this.home.draw(ctx, view);
     else this.world.draw(ctx, view);
+    if (typeof Weather !== 'undefined') Weather.drawGround(ctx, this);   // 云影 / 积雪 / 湿滑地面（世界层）
     this.drawObjectShadows(ctx);                  // 太阳投影：树 / 石 / 矿 / 草
     this.drawFx(ctx);
     // 鼠标悬停的资源点高亮
@@ -956,6 +960,7 @@ class Game {
     ctx.restore();
     this.drawAmbient(ctx);             // 环境粒子（屏幕空间，落在角色之前）
     this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
+    if (typeof Weather !== 'undefined') Weather.drawSky(ctx, this);   // 雨丝 / 雪花 / 阵风 / 闪电（最上层）
     this.drawVignette(ctx);
     if (!this.inHome) this.drawMinimap();
     if (this.interactHint) {
@@ -1075,8 +1080,10 @@ class Game {
       g2.addColorStop(1, fog);
       this._fogKey = key; this._fogGrad = g2;
     }
+    /* 天气能见度：雨/雪/雷暴时雾更重，视野变差 */
+    const wvis = (typeof Weather !== 'undefined' && Weather.visMul) ? Weather.visMul() : 1;
     ctx.save();
-    ctx.globalAlpha = 0.16 + night * 0.06;
+    ctx.globalAlpha = clamp(0.16 + night * 0.06 + (1 - wvis) * 0.62, 0, 0.62);
     ctx.fillStyle = this._fogGrad;
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
@@ -1100,7 +1107,8 @@ class Game {
     const kind = this.ambientKind();
     if (this._ambKind !== kind) { this._ambKind = kind; this.ambient = []; }
     if (!this.ambient) this.ambient = [];
-    const want = (typeof Mobile !== 'undefined' && Mobile.on) ? 38 : 64;
+    const wmul = (typeof Weather !== 'undefined' && Weather.ambientMul) ? Weather.ambientMul() : 1;
+    const want = Math.round(((typeof Mobile !== 'undefined' && Mobile.on) ? 38 : 64) * wmul);
     const r = regionAtTile(Math.floor(p.x / TILE_PX), Math.floor(p.y / TILE_PX));
     const pal = (r && r.pal) || null;
     while (this.ambient.length < want) {
