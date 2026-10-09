@@ -33,6 +33,10 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #goldLine{margin-top:5px;font-size:11px;color:#ffdf94}
 #goldLine .sep{color:#4a5680;margin:0 5px}
 #buffs{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;max-width:266px}
+/* 天气 / 时段（左上信息区，与大区名同列） */
+#weatherLine{margin-top:3px;font-size:11px;color:#ffd76a;letter-spacing:.5px}
+#weatherLine .sep{opacity:.45;margin:0 4px}
+#weatherLine #clock{color:#c9d4ef}
 .bf{position:relative;width:26px;height:26px;border:1px solid var(--line);background:#0d1322;
   display:flex;align-items:center;justify-content:center;font-size:13px}
 .bf i{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);font-size:9px;text-align:center;color:#bcd;font-style:normal}
