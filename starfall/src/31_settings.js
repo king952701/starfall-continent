@@ -82,7 +82,7 @@ const Settings = {
   QUALITY: [['low', '低分辨率', 0.6], ['mid', '中分辨率', 0.8], ['high', '高分辨率', 1], ['4k', '4K', 1.6]],
   FPS: [[15, '15 fps'], [30, '30 fps'], [60, '60 fps'], [120, '120 fps'], [0, '无上限']],
   ZOOMS: [[0.6, '×0.6'], [0.8, '×0.8'], [1, '×1.0 标准'], [1.5, '×1.5'], [2, '×2.0']],
-  data: { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, ui: {} },
+  data: { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ui: {} },
   editMode: false,
   _panel: null,
 
@@ -348,7 +348,22 @@ const Settings = {
     ubox.appendChild(bEdit); ubox.appendChild(bSave); ubox.appendChild(bReset);
     ur.appendChild(ubox);
 
-    /* 6) 视野缩放（手机也可双指缩放） */
+    /* 6) 天气系统 */
+    sec('天气 / Weather');
+    const wtr = row('天气特效', '智能天气：晴 / 多云 / 刮风 / 下雨 / 雷暴 / 下雪（关闭可省电）');
+    const wtbox = el('div', 'setBtns');
+    [['1', '开'], ['0', '关']].forEach(o => {
+      const b = el('button', 'btn' + ((this.data.weather === undefined ? 1 : this.data.weather) === +o[0] ? ' gold' : ''), o[1]);
+      b.onclick = () => {
+        this.data.weather = +o[0]; this.save(); Snd.play('ok');
+        if (typeof Weather !== 'undefined') { Weather.setEnabled(+o[0]); Weather.enabled = +o[0]; }
+        this.open();
+      };
+      wtbox.appendChild(b);
+    });
+    wtr.appendChild(wtbox);
+
+    /* 7) 视野缩放（手机也可双指缩放） */
     sec('视野 / Camera Zoom');
     const zr = row('缩放倍率', '当前 ×' + (this.data.zoom || 1).toFixed(2) + '（手机：双指张合缩放）');
     const zbox = el('div', 'setBtns');
@@ -367,7 +382,7 @@ const Settings = {
     const bottom = el('div', 'setBtns');
     const bAll = el('button', 'btn', '恢复全部默认设置');
     bAll.onclick = () => {
-      this.data = { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, ui: {} };
+      this.data = { master: 70, sfx: 70, music: 25, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ui: {} };
       this.save(); this.applyAll(); Snd.play('ok'); this.open();
     };
     bottom.appendChild(bAll);
