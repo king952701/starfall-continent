@@ -166,9 +166,14 @@ class World {
         }
       }
     }
-    // 注册采集点索引
+    // 注册采集点索引（同时按采集需求等级着色：等级越高，品质色越高级、模型越华丽）
     for (const ob of ch.objs) {
-      if (ob.node) { ob.node.lx = ob.lx; ob.node.ly = ob.ly; ch.nodes.set(ob.lx + ',' + ob.ly, ob.node); }
+      if (ob.node) {
+        ob.node.lx = ob.lx; ob.node.ly = ob.ly; ch.nodes.set(ob.lx + ',' + ob.ly, ob.node);
+        const q = nodeQuality(ob.node.req);
+        ob.node.q = q.q; ob.node.qColor = q.color;
+        ob.sp = Sprites.nodeTier(ob.sp, q.color, q.q);
+      }
     }
     return ch;
   }
@@ -320,8 +325,11 @@ class World {
     for (const ob of ch.objs) {
       if (ob.node && ob.node.amount <= 0) continue;      // 已采尽：不绘制
       if (ob.kind === 'chest' && ob.opened) continue;
-      const dx = ob.lx * TILE_PX + (ob.ox || 0);
-      const dy = ob.ly * TILE_PX + TILE_PX - ob.sp.height + (ob.oy || 0);
+      /* 等级着色贴图外扩了边距：按 _ox/_oy 与原尺寸对齐回格内原位 */
+      const ox = ob.sp._ox || 0, oy = ob.sp._oy || 0;
+      const bh = ob.sp._baseH || ob.sp.height;
+      const dx = ob.lx * TILE_PX + (ob.ox || 0) - ox;
+      const dy = ob.ly * TILE_PX + TILE_PX - bh + (ob.oy || 0) - oy;
       x.drawImage(ob.sp, dx, dy);
     }
     ch.canvas = o.c;
