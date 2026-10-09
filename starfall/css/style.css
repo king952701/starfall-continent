@@ -40,7 +40,10 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #weatherLine .sep{opacity:.45;margin:0 4px}
 #weatherLine #clock{color:#c9d4ef}
 .bf{position:relative;width:26px;height:26px;border:1px solid var(--line);background:#0d1322;
-  display:flex;align-items:center;justify-content:center;font-size:13px}
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+  pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-color .15s,box-shadow .15s}
+.bf:hover{border-color:var(--gold);box-shadow:0 0 8px rgba(255,215,106,.45)}
+.bf:active{filter:brightness(1.25)}
 .bf i{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);font-size:9px;text-align:center;color:#bcd;font-style:normal}
 .bf.bad{border-color:#8b3550;box-shadow:0 0 6px rgba(220,60,90,.4)}
 
@@ -93,7 +96,9 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 
 /* ============ Tooltip ============ */
 #tooltip{position:absolute;z-index:60;width:288px;padding:8px 10px;background:rgba(9,13,25,.96);
-  border:1px solid var(--line);box-shadow:0 6px 22px rgba(0,0,0,.7);pointer-events:none;font-size:12px}
+  border:1px solid var(--line);box-shadow:0 6px 22px rgba(0,0,0,.7);pointer-events:none;font-size:12px;
+  opacity:1;transition:opacity .35s ease}
+#tooltip.tipFade{opacity:0}                      /* 定时渐隐（Buff 面板 3 秒后） */
 #tooltip .tn{font-size:13px;font-weight:600;margin-bottom:2px}
 #tooltip .tq{font-size:11px;color:var(--dim);margin-bottom:4px}
 #tooltip .td{color:#9fb0dd;font-style:italic;margin:4px 0}
@@ -106,6 +111,7 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
   font-size:11px;line-height:1;color:#ffd76a;background:#1b2545;border:1px solid #2b3557;
   border-radius:12px;padding:4px 9px}
 body.mobile #tooltip{width:min(80vw,288px);padding-right:80px}
+body.mobile #tooltip.tipNoClose{padding-right:10px}    /* 无「✕ 关闭」按钮的面板 */
 
 /* ============ 面板 ============ */
 #panelRoot{position:absolute;inset:0;z-index:50;pointer-events:none}
@@ -507,3 +513,52 @@ body.mobile.portrait #rotateTip{display:flex}
   align-items:center;justify-content:center;gap:14px;color:var(--gold);letter-spacing:4px}
 .spinner{width:44px;height:44px;border:3px solid #2a3355;border-top-color:var(--gold);border-radius:50%;animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* =========================================================================
+ * 可拖拽分隔条 Splitter（PC / iOS / Android / 平板 同一套）
+ * 约定：视觉 2px 极克制，热区 PC 8px、触摸端 48px，hover/聚焦/拖拽时才高亮
+ * =======================================================================*/
+.sp{display:grid;height:100%;min-width:0;min-height:0;
+  --sp-a:50%;--sp-bar-w:2px}
+.sp-x{grid-template-columns:var(--sp-a) var(--sp-bar-w) minmax(0,1fr)}
+.sp-y{grid-template-rows:var(--sp-a) var(--sp-bar-w) minmax(0,1fr)}
+.sp>*{min-width:0;min-height:0;overflow:auto}
+
+.sp-bar{position:relative;padding:0;border:0;background:rgba(255,255,255,.07);
+  --sp-hot:8px;                                  /* PC 热区 8px */
+  touch-action:none;pointer-events:auto;outline:none;-webkit-tap-highlight-color:transparent}
+.sp-x>.sp-bar{cursor:ew-resize}
+.sp-y>.sp-bar{cursor:ns-resize}
+.sp-bar::before{content:"";position:absolute;background:transparent}  /* 扩大热区，不占布局 */
+.sp-x>.sp-bar::before{left:50%;top:0;bottom:0;width:var(--sp-hot);transform:translateX(-50%)}
+.sp-y>.sp-bar::before{top:50%;left:0;right:0;height:var(--sp-hot);transform:translateY(-50%)}
+/* 抓握箭头：默认不可见，hover / 键盘聚焦 / 拖拽时才出现（移动端常显淡提示） */
+.sp-bar::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;
+  font-size:11px;line-height:14px;text-align:center;color:#0a0e1c;opacity:0;
+  transition:opacity .12s;pointer-events:none;text-shadow:0 0 2px #000}
+.sp-x>.sp-bar::after{content:"↔"}
+.sp-y>.sp-bar::after{content:"↕"}
+.sp-bar:hover,.sp-bar:focus-visible,.sp-bar.sp-on{background:var(--gold);box-shadow:0 0 8px rgba(255,215,106,.55)}
+.sp-bar:hover::after,.sp-bar:focus-visible::after,.sp-bar.sp-on::after{opacity:.95}
+/* 触摸端：无 hover 概念 → 常显轻量提示线 + 热区放大到 48px（iOS/Android/平板） */
+@media (pointer:coarse){.sp-bar{--sp-hot:48px;background:rgba(255,215,106,.16)}
+  .sp-bar::after{opacity:.45}}
+body.mobile .sp-bar{--sp-hot:48px;background:rgba(255,215,106,.18)}
+body.mobile .sp-bar.sp-on,.sp-bar.sp-on{background:var(--gold)}
+/* 拖拽中：禁掉子元素的指针与文字选中，防止抖动/误触/选中文本 */
+.sp-drag{user-select:none;-webkit-user-select:none}
+.sp-drag>*{pointer-events:none}
+.sp-drag>.sp-bar{pointer-events:auto}
+
+/* 已进入分栏的子元素交出自身固定高度，由 grid 轨道决定（聊天消息区） */
+.sp>#chatMsgs{height:auto;min-height:0}
+
+/* 分栏容器接管后收紧间距（原 flex gap 会额外撑开 8px） */
+.ovBody.sp{gap:4px}
+body.mobile .ovBody.sp{grid-template-columns:var(--sp-a) var(--sp-bar-w) minmax(0,1fr)}
+
+/* 安全区：刘海 / 灵动岛 / 手势条 / 挖孔不遮挡分栏内容 */
+#ovBox{max-width:calc(96vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))}
+#panelRoot{left:env(safe-area-inset-left,0px);right:env(safe-area-inset-right,0px);
+  top:env(safe-area-inset-top,0px);bottom:env(safe-area-inset-bottom,0px)}
+body.mobile .panel{max-width:calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))}

@@ -16,6 +16,9 @@ class Game {
     this.gather = null; this.selectedBagIndex = -1;
     this.task = null; this.hover = null;   // 批量采集任务 / 当前悬停资源点
     this.route = null;                     // 自动导航目标
+    this.boat = null;                      // 正在驾驶的船
+    this._board = null; this._disembark = null;   // 上船 / 下船补间动画
+    this._wakeT = 0;                       // 航行尾迹计时
     this.spawnT = 0; this.saveT = 0; this.miniCached = false;
     this.timeSec = 0; this.last = performance.now();
     this.interactHint = '';
@@ -49,6 +52,8 @@ class Game {
       if (gap > 0 && ts - this.last < gap - 1.2) { requestAnimationFrame(t => this.loop(t)); return; }
     }
     const dt = Math.min(0.05, (ts - this.last) / 1000); this.last = ts;
+    /* 手柄：聚焦分隔条后可用左摇杆调整（无手柄时立即返回，几乎零开销） */
+    if (typeof Splitter !== 'undefined') { try { Splitter.gamepadTick(); } catch (e) { } }
     try { this.update(dt); this.render(dt); } catch (e) { console.error(e); }
     requestAnimationFrame(t => this.loop(t));
   }
@@ -226,7 +231,7 @@ class Game {
     const z = this.cam.zoom || 1;
     this.mouse.worldX = this.cam.x + this.mouse.x / z; this.mouse.worldY = this.cam.y + this.mouse.y / z;
     p.aimAngle = angleOf(p.x, p.y - 8, this.mouse.worldX, this.mouse.worldY);
-    if (!p.dead) this.movePlayer(dt);
+    if (!p.dead) { this.updateBoard(dt) || this.movePlayer(dt); }
     p.update(dt, this);
     // 摄像机跟随（可视世界范围 = 屏幕尺寸 / 缩放，保证主角始终居中）
     const vw = this.cam.w / z, vh = this.cam.h / z;
@@ -285,6 +290,8 @@ class Game {
     if (dx || dy) { if (this.route) this.cancelRoute('已取消导航'); }
     else if (this.route && !this.gather && !this.inHome) { this.updateRoute(dt); return; }
     if (this.gather) { dx = dy = 0; }
+    if (p.sailing) { this.boatMove(dt, dx, dy); return; }   // 驾船：船在水面航行
+    if (this._board || this._disembark) return;             // 上 / 下船动画中不可操作
     if (dx || dy) {
       if (p.isControlled()) { return; }
       const len = Math.hypot(dx, dy); dx /= len; dy /= len;
@@ -340,6 +347,10 @@ class Game {
   tryInteract() {
     if (this.inHome) return this.tryInteractHome();
     const p = this.player;
+    /* 船只优先：在船上 → 下船；岸边有小船 → 上船 */
+    if (p.sailing) return this.tryDisembark();
+    const bt = this.nearbyBoat();
+    if (bt) return this.boardBoat(bt);
     const tx = Math.floor(p.x / TILE_PX), ty = Math.floor(p.y / TILE_PX);
     // 优先采集点：打开资源点采集面板
     const nd = this.world.nearestNode(tx, ty, 2.6);
@@ -353,6 +364,139 @@ class Game {
     else if (o.kind === 'bench') { UI.openCraft(); UI._craftTab = o.data; UI.refreshCraft(); }
     else if (o.kind === 'portal') this.enterHome();
     else if (o.kind === 'npc') this.talkNpc(o);
+  }
+  /* ================= 船只 ================= */
+  /** 找玩家身边可乘坐的小船（按世界坐标就近，半径 52px） */
+  nearbyBoat() {
+    const p = this.player;
+    if (this.inHome) return null;
+    const tx = Math.floor(p.x / TILE_PX), ty = Math.floor(p.y / TILE_PX);
+    for (let cx = (tx - 2) >> 4; cx <= (tx + 2) >> 4; cx++) {
+      for (let cy = (ty - 2) >> 4; cy <= (ty + 2) >> 4; cy++) {
+        const ch = this.world.getChunk(cx, cy);   // 用 getChunk：区块未加载时现生成（与视野加载一致）
+        if (!ch) continue;
+        for (const o of ch.objs) {
+          if (o.kind === 'boat' && !o.riding && dist(o.wx, o.wy, p.x, p.y) < 52) return o;
+        }
+      }
+    }
+    return null;
+  }
+  /** 上船：0.5s 走向小船的补间，落座后接管操控 */
+  boardBoat(o) {
+    const p = this.player;
+    if (p.sailing || this._board || this._disembark) return;
+    if (this.route) this.cancelRoute('上船已取消导航');
+    if (this.task) this.stopTask('上船中断了自动采集');
+    p.boarding = true;
+    this._board = { t: 0, dur: 0.5, fx: p.x, fy: p.y, boat: o };
+    this.fx.push({ x: o.wx, y: o.wy, r: 20, ttl: .5, color: '#cfe8ff', type: 'circle' });
+  }
+  /** 下船：找最近的可站立岸格，0.45s 走过去 */
+  tryDisembark() {
+    const p = this.player, o = this.boat;
+    if (!o || this._board || this._disembark) return;
+    const tx = Math.floor(o.wx / TILE_PX), ty = Math.floor(o.wy / TILE_PX);
+    let best = null, bd = 1e9;
+    for (let ry = -2; ry <= 2; ry++) for (let rx = -2; rx <= 2; rx++) {
+      const nx = tx + rx, ny = ty + ry;
+      if (nx < 0 || ny < 0 || nx >= WORLD_SIZE || ny >= WORLD_SIZE) continue;
+      const info = this.world.tileInfo(nx, ny);
+      if (info.water || info.mountain || this.world.solidTile(nx, ny)) continue;
+      const d = dist(nx, ny, tx, ty);
+      if (d < bd) { bd = d; best = { x: nx, y: ny }; }
+    }
+    if (!best) { UI.toast('离岸太远，无法下船', '#ff9a9a'); return; }
+    if (this.task) this.stopTask('下船中断了自动采集');
+    p.disembarking = true;
+    this._disembark = { t: 0, dur: 0.45, fx: p.x, fy: p.y,
+      tx2: best.x * TILE_PX + TILE_PX / 2, ty2: best.y * TILE_PX + TILE_PX / 2 };
+    this.fx.push({ x: o.wx, y: o.wy, r: 18, ttl: .5, color: '#cfe8ff', type: 'circle' });
+  }
+  /** 上 / 下船补间推进；返回 true 表示本帧玩家被动画接管 */
+  updateBoard(dt) {
+    const p = this.player;
+    if (this._board) {
+      const a = this._board; a.t += dt;
+      const k = clamp(a.t / a.dur, 0, 1), e = k * k * (3 - 2 * k);
+      p.x = a.fx + (a.boat.wx - a.fx) * e;
+      p.y = a.fy + (a.boat.wy - a.fy) * e;
+      p.moving = true; p.animT += dt * 3;
+      if (k >= 1) {
+        this._board = null; p.boarding = false;
+        p.sailing = true; this.boat = a.boat; a.boat.riding = true;
+        p.x = a.boat.wx; p.y = a.boat.wy;
+        p.buffs.remove('D308'); p.recompute();   // 坐船不吃游泳减速
+        UI.toast('已上船 · 方向键 / 摇杆开船，靠岸按 E 下船', '#9fe8ff');
+      }
+      return true;
+    }
+    if (this._disembark) {
+      const a = this._disembark; a.t += dt;
+      const k = clamp(a.t / a.dur, 0, 1), e = k * k * (3 - 2 * k);
+      p.x = a.fx + (a.tx2 - a.fx) * e;
+      p.y = a.fy + (a.ty2 - a.fy) * e;
+      p.moving = true; p.animT += dt * 3;
+      if (k >= 1) {
+        const o = this.boat;
+        this._disembark = null; p.disembarking = false; p.sailing = false;
+        if (o) { o.riding = false; }
+        this.boat = null;
+        p.recompute();
+        UI.toast('已下船', '#9fe8ff');
+      }
+      return true;
+    }
+    return false;
+  }
+  /** 驾船移动：只能在水面航行，船速略高于步行且不受游泳减速影响 */
+  boatMove(dt, dx, dy) {
+    const p = this.player, o = this.boat;
+    if (!o) { p.sailing = false; return; }
+    const ox = o.wx, oy = o.wy;
+    if (dx || dy) {
+      const len = Math.hypot(dx, dy); dx /= len; dy /= len;
+      const sp = p.stats.moveSpd * TILE_PX * 1.1 * dt, r = 10;
+      const canGo = (nx, ny) => {
+        const pts = [[nx - r, ny - r], [nx + r, ny - r], [nx - r, ny + r], [nx + r, ny + r], [nx, ny]];
+        for (const q of pts) if (!this.world.waterTile(Math.floor(q[0] / TILE_PX), Math.floor(q[1] / TILE_PX))) return false;
+        return true;
+      };
+      if (dx && canGo(o.wx + dx * sp, o.wy)) o.wx += dx * sp;
+      if (dy && canGo(o.wx, o.wy + dy * sp)) o.wy += dy * sp;
+      p.face = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      o.face = Math.atan2(dy, dx) + Math.PI / 2;   // 素材船头朝上，行进方向 + 90°
+      p.animT += dt * Math.min(3, 1 + p.stats.moveSpd / 6);
+      this._wakeT -= dt;                            // 航行尾迹
+      if (this._wakeT <= 0) {
+        this._wakeT = 0.18;
+        this.fx.push({ x: o.wx - Math.sin(o.face) * 12, y: o.wy + Math.cos(o.face) * 12, r: 7, ttl: .5, color: 'rgba(207,232,255,.5)', type: 'circle' });
+      }
+    }
+    p.x = o.wx; p.y = o.wy;
+    p.moving = (o.wx !== ox || o.wy !== oy);
+  }
+  /** 绘制水域上的小船（含轻微起伏） */
+  drawBoats(ctx, view) {
+    const CS = CHUNK * TILE_PX;
+    const c0x = Math.floor(view.x / CS) - 1, c1x = Math.floor((view.x + view.w) / CS) + 1;
+    const c0y = Math.floor(view.y / CS) - 1, c1y = Math.floor((view.y + view.h) / CS) + 1;
+    const bob = Math.sin(this.timeSec * 2.2) * 1.4;
+    for (let cy = c0y; cy <= c1y; cy++) {
+      for (let cx = c0x; cx <= c1x; cx++) {
+        const ch = this.world.chunks.get(cx + ',' + cy);
+        if (!ch) continue;
+        for (const o of ch.objs) {
+          if (o.kind !== 'boat') continue;
+          this.drawShadow(ctx, o.wx, o.wy + 6, 10, 4);
+          ctx.save();
+          ctx.translate(Math.round(o.wx), Math.round(o.wy + bob));
+          ctx.rotate(o.face || 0);
+          ctx.drawImage(Sprites.boat(o.v || 1), -11, -18, 22, 36);
+          ctx.restore();
+        }
+      }
+    }
   }
   talkNpc(o) {
     const lines = {
@@ -452,6 +596,9 @@ class Game {
       }
     } else {
       const tx = Math.floor(this.player.x / TILE_PX), ty = Math.floor(this.player.y / TILE_PX);
+      if (this.player.sailing) { this.interactHint = 'E 下船（靠近岸边）'; this.updateNodePop(); return; }
+      const bt = this.nearbyBoat();
+      if (bt) { this.interactHint = 'E 上船'; this.updateNodePop(); return; }
       const nd = this.world.nearestNode(tx, ty, 2.6);
       if (nd) txt = '左键/E 打开 ' + this.nodeName(nd.node) + ' 采集面板';
       else {
@@ -935,6 +1082,7 @@ class Game {
     else this.world.draw(ctx, view);
     if (typeof Weather !== 'undefined') Weather.drawGround(ctx, this);   // 云影 / 积雪 / 湿滑地面（世界层）
     this.drawObjectShadows(ctx);                  // 太阳投影：树 / 石 / 矿 / 草
+    if (!this.inHome) this.drawBoats(ctx, view);  // 水域小船（含驾驶中的船）
     this.drawFx(ctx);
     // 鼠标悬停的资源点高亮
     if (this.hover) {
@@ -1201,11 +1349,13 @@ class Game {
   drawPlayer(ctx, p) {
     const sp = Sprites.player(p.clsKey);
     const frames = sp[p.face] || sp.down;
-    const idx = p.moving ? (Math.floor(p.animT * 6) % 4) : 0;
+    const sailing = !!p.sailing;
+    const idx = (p.moving && !sailing) ? (Math.floor(p.animT * 6) % 4) : 0;
     const cv = frames[idx];
-    const cx = Math.round(p.x - sp.w / 2), cy = Math.round(p.y - sp.h + 12);
-    // 影子：随太阳方位偏移、随太阳高度伸缩
-    this.drawShadow(ctx, p.x, p.y, 12, 5);
+    /* 坐船：随船起伏，坐姿（不播放走路帧、不画人影，船已有影子） */
+    const bob = sailing ? Math.sin(this.timeSec * 2.2) * 1.4 : 0;
+    const cx = Math.round(p.x - sp.w / 2), cy = Math.round(p.y - sp.h + (sailing ? 16 : 12) + bob);
+    if (!sailing) this.drawShadow(ctx, p.x, p.y, 12, 5);
     if (p.invulnT > 0) ctx.globalAlpha = 0.55;
     if (p.dead) { ctx.save(); ctx.translate(cx + sp.w / 2, cy + sp.h / 2); ctx.rotate(1.4); ctx.drawImage(cv, -sp.w / 2, -sp.h / 2); ctx.restore(); }
     else ctx.drawImage(cv, cx, cy);

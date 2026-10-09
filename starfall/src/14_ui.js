@@ -56,6 +56,17 @@ const UI = {
     this.elToast = $('toastWrap');
     this.buildSkillBar();
     this.buildChat();
+    /* 聊天窗：消息区 / 输入区 上下可拖拽（静态 DOM，初始化时挂一次） */
+    if (typeof Splitter !== 'undefined') {
+      const cw = $('chatWrap');
+      const msgs = $('chatMsgs'), row = $('chatRow');
+      if (cw && msgs && row && !cw._spChat) {
+        cw._spChat = Splitter.attach(cw, {
+          dir: 'y', key: 'chat.main', a: msgs, b: row,
+          min1: 90, max1: 640, min2: 34, def: 0.80
+        });
+      }
+    }
     $('hud').classList.remove('hide');
     window.addEventListener('resize', () => this.fitPanels());   // 旋屏 / 窗口变化时重新居中缩放
     // 任意操作都重置「10 秒无操作自动关闭」计时
@@ -124,9 +135,14 @@ const UI = {
       bw.dataset.sig = sig; bw.innerHTML = '';
       p.buffs.list.slice(0, 10).forEach(b => {
         const d = BUFFS[b.id];
-        const e = el('div', 'bf' + (d.type === 'debuff' ? ' bad' : ''), d.icon + '<i>' + Math.ceil(b.t) + '</i>');
-        e.title = d.name + '：' + d.desc;
+        /* timer=false 的状态类效果（如「游泳」）不显示倒计时 */
+        const e = el('div', 'bf' + (d.type === 'debuff' ? ' bad' : ''),
+          d.icon + (d.timer === false ? '' : '<i>' + Math.ceil(b.t) + '</i>'));
+        e.setAttribute('aria-label', d.name + '：' + d.desc);
+        this.bindBuffTip(e, b, d);
         bw.appendChild(e);
+        /* 图标每秒重建：若面板正开着同一个效果，重建后保持显示（不重置 3s 计时） */
+        if (this._buffHoverId === b.id) this.showBuffTip(e, b, d, true);
       });
     }
     // 技能栏
@@ -222,10 +238,11 @@ const UI = {
     this.tipShow(html, x, y, owner);
     this._tipKey = _k;
   },
-  tipShow(html, x, y, owner) {
+  tipShow(html, x, y, owner, opt) {
+    opt = opt || {};
     this.elTip.innerHTML = html;
     /* 触屏端没有 mouseleave：提示框需要手动关闭，否则会一直留在屏幕上 */
-    if (typeof Mobile !== 'undefined' && Mobile.on) {
+    if (opt.noClose !== true && typeof Mobile !== 'undefined' && Mobile.on) {
       const c = document.createElement('span');
       c.className = 'tipClose';
       c.textContent = '✕ 关闭';
@@ -237,8 +254,15 @@ const UI = {
       this.elTip.insertBefore(c, this.elTip.firstChild);
       if (this._tipT) clearTimeout(this._tipT);
       this._tipT = setTimeout(() => { this._tipT = null; this.tipHide(owner); }, 6000);   // 兜底：6 秒后自动消失
+    } else if (opt.fade) {
+      /* 定时渐隐消失（Buff 面板：3 秒） */
+      if (this._tipT) clearTimeout(this._tipT);
+      this._tipT = setTimeout(() => { this._tipT = null; this.tipFade(owner); }, opt.fade);
     }
     this.elTip.classList.remove('hide');
+    this.elTip.classList.remove('tipFade');
+    /* 无关闭按钮的面板不需要为按钮预留右侧内边距（移动端） */
+    if (this.elTip.classList) this.elTip.classList.toggle('tipNoClose', opt.noClose === true);
     this._tipOwner = owner || '';
     this._tipKey = '';
     const r = this.elTip.getBoundingClientRect();
@@ -368,7 +392,47 @@ const UI = {
     if (owner && this._tipOwner !== owner) return;
     this._tipOwner = ''; this._tipKey = '';
     if (this._tipT) { clearTimeout(this._tipT); this._tipT = null; }
+    this.elTip.classList.remove('tipFade');
     this.elTip.classList.add('hide');
+  },
+  /** 渐隐后关闭：先加 .tipFade（CSS 过渡 0.35s），过渡结束再真正隐藏 */
+  tipFade(owner) {
+    const t = this.elTip;
+    if (!t || t.classList.contains('hide')) return;
+    if (owner && this._tipOwner !== owner) return;
+    t.classList.add('tipFade');
+    if (this._fadeT) clearTimeout(this._fadeT);
+    this._fadeT = setTimeout(() => { this._fadeT = null; this.tipHide(owner); }, 360);
+  },
+
+  /* ---------- Buff / Debuff 图标信息面板 ----------
+   * PC：鼠标悬停查看；安卓 APK / 移动端：点击（触摸）查看；均 3 秒后渐隐消失 */
+  showBuffTip(el, b, d, keepT) {
+    const r = el.getBoundingClientRect();
+    const color = d.type === 'debuff' ? '#ff9a9a' : '#9fe8b8';
+    let html = '<div class="tn">' + d.icon + ' ' + d.name + '</div>' +
+      '<div class="tq" style="color:' + color + '">' + (d.type === 'debuff' ? '减益 · Debuff' : '增益 · Buff') + '</div>' +
+      '<div class="td">' + d.desc + '</div>' +
+      '<div class="tr">' + (d.timer === false
+        ? '<span class="mini">状态效果：' + (d.tip || '条件解除后自动移除') + '</span>'
+        : '<span class="mini">剩余 ' + Math.ceil(b.t) + ' 秒</span>') + '</div>';
+    this._buffHoverId = b.id;
+    this.tipShow(html, r.left, r.bottom + 4, 'buff', keepT ? { noClose: true } : { fade: 3000, noClose: true });
+  },
+  bindBuffTip(el, b, d) {
+    const self = this;
+    if (typeof Mobile !== 'undefined' && Mobile.on) {
+      el.addEventListener('click', ev => {                 // 移动端：点击图标弹出信息
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (ev && ev.preventDefault) ev.preventDefault();
+        self.showBuffTip(el, b, d, false);
+      });
+    } else {
+      el.addEventListener('mouseenter', () => self.showBuffTip(el, b, d, false));
+      el.addEventListener('mouseleave', () => {
+        if (self._buffHoverId === b.id) { self._buffHoverId = null; self.tipHide('buff'); }
+      });
+    }
   },
 
   /* ---------- 资源点悬浮信息 ---------- */
@@ -532,6 +596,11 @@ const UI = {
       url: 'https://kenney.nl/assets', note: '地形瓦片经按区域重新染色后使用'
     },
     {
+      name: 'Kenney 海盗素材包（水域小船）', en: 'Kenney Pirate Pack (dinghy sprites)',
+      by: 'Kenney Vleugels（www.kenney.nl）', lic: 'CC0 1.0 公共领域 / Public Domain',
+      url: 'https://kenney.nl/assets/pirate-pack', note: '小船外观（assets/boat/，随包附 LICENSE-Kenney.txt）'
+    },
+    {
       name: 'Apache Cordova', en: 'Apache Cordova（Android 打包框架）',
       by: 'Apache Software Foundation', lic: 'Apache-2.0',
       url: 'https://cordova.apache.org/', note: '将网页游戏打包为 Android 安装包'
@@ -585,7 +654,7 @@ const UI = {
 
     const body = el('div', 'crBody');
     body.appendChild(el('p', 'crP',
-      '《星落大陆》是一款原创的 2D 开放世界沙盒 RPG。地表瓦片采用 CC0 公共领域素材并按大区重新染色；' +
+      '《星落大陆》是一款原创的 2D 开放世界沙盒 RPG。地表瓦片与水域小船采用 CC0 公共领域素材（瓦片按大区重新染色）；' +
       '角色立绘、图标、界面与全部特效均由本项目自研的程序化绘图系统实时生成，未使用任何受版权保护的美术或音频资源。' +
       '在此向所有让本项目成为可能的开源作者致以诚挚谢意。'));
     body.appendChild(el('p', 'crP en',
@@ -665,6 +734,9 @@ const UI = {
     const obj = { el: p, body: b, title: t, _ow: w, _oh: h };
     this.panels[name] = obj;
     if (p._ow === undefined) { p._ow = w; p._oh = h; }   // DOM 上保留原始尺寸供 fitPanel 使用
+    /* 面板内容由各 open*() 同步填充 → 下一帧统一挂载分隔条（含嵌套），
+     * 这样所有面板无需逐个改代码，只需在模板上标 data-sp / data-sp-key */
+    if (typeof Splitter !== 'undefined') requestAnimationFrame(() => Splitter.scan(b));
     this.touch();                                        // 打开面板开始计时
     return obj;
   },
@@ -1254,6 +1326,12 @@ const UI = {
     if (g.inHome) { this.toast('家园为独立空间，无法导航野外资源', '#ff9a9a'); return; }
     $('ovOverlay').classList.remove('hide');
     $('ovOverlay').style.display = '';
+    /* 左地图 / 右列表：左右可拖拽（地图画布保底 600px，右侧列表最少 220px） */
+    if (typeof Splitter !== 'undefined') {
+      const bd = document.querySelector('.ovBody');
+      if (bd && !bd._sp) Splitter.attach(bd, { dir: 'x', key: 'ov.main', min1: 600, max1: 900, min2: 200, def: 0.66 });
+      else if (bd && bd._sp) bd._sp.relayout();
+    }
     this.scanOverview();
   },
   closeOverview() {

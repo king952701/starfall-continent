@@ -203,6 +203,33 @@ class World {
         }
       }
     }
+    /* --- 岸边码头 + 可乘坐的小船：开阔水面贴岸偶现（小溪太窄不放） --- */
+    for (let ly = 1; ly < CHUNK - 1; ly++) {
+      for (let lx = 1; lx < CHUNK - 1; lx++) {
+        const tx = btx + lx, ty = bty + ly;
+        const info = this.tileInfo(tx, ty);
+        if (!info.water || info.wkind === 'stream') continue;
+        const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(d => {
+          const t2 = this.tileInfo(tx + d[0], ty + d[1]);
+          return !t2.water && !t2.mountain;
+        });
+        /* 用种子哈希而非随机数：同一位置每次生成都稳定出同一处码头（船位可预期） */
+        if (!near.length || hash2(tx, ty, this.seed + 770) >= 0.03) continue;
+        const d = near[Math.floor(hash2(tx, ty, this.seed + 771) * near.length) % near.length];
+        const dtx = tx + d[0], dty = ty + d[1];
+        /* 码头落在可站立的陆地格上（该格没被树/石头占住才放） */
+        if (!ch.solid[(dty & 15) * CHUNK + (dtx & 15)]) {
+          ch.objs.push({ lx: dtx & 15, ly: dty & 15, kind: 'dock', sp: Sprites.dock(), solid: false, ox: 0, oy: 0 });
+        }
+        /* 小船停在码头旁的水面上；wx/wy 为世界像素坐标（乘船时会移动） */
+        ch.objs.push({
+          lx: lx, ly: ly, kind: 'boat', solid: false,
+          v: 1 + Math.floor(hash2(tx, ty, this.seed + 772) * 3) % 3,
+          wx: tx * TILE_PX + TILE_PX / 2, wy: ty * TILE_PX + TILE_PX / 2,
+          face: -Math.PI / 2, riding: false
+        });
+      }
+    }
     // 注册采集点索引（同时按采集需求等级着色：等级越高，品质色越高级、模型越华丽）
     for (const ob of ch.objs) {
       if (ob.node) {
@@ -232,10 +259,20 @@ class World {
   }
 
   /* ---------- 查询 ---------- */
-  solidTile(tx, ty) {
+  /** 水域判定（江河 / 湖 / 海 / 池塘 / 小溪） */
+  waterTile(tx, ty) {
+    return !!this.tileInfo(tx, ty).water;
+  }
+  /**
+   * @param ignoreWater 是否允许进入水域（玩家游泳时为 true）
+   *   玩家：水域不再碰撞，只获得「游泳」状态；怪物/刷怪点仍按原规则被水域阻挡
+   */
+  solidTile(tx, ty, ignoreWater) {
     const info = this.tileInfo(tx, ty);
-    /* 小溪（stream）是浅水，可以涉水通过；江河/湖/海为硬碰撞 */
-    if (info.water && info.wkind !== 'stream') return true;
+    if (info.water) {
+      if (ignoreWater) return false;                    // 游泳：水域可通行
+      return info.wkind !== 'stream';                   // 其余实体：小溪可涉水，江河/湖/海阻挡
+    }
     if (info.mountain) return true;
     const ch = this.getChunk(tx >> 4, ty >> 4);
     return !!ch.solid[(ty & 15) * CHUNK + (tx & 15)];
@@ -364,6 +401,7 @@ class World {
     for (const ob of ch.objs) {
       if (ob.node && ob.node.amount <= 0) continue;      // 已采尽：不绘制
       if (ob.kind === 'chest' && ob.opened) continue;
+      if (ob.kind === 'boat') continue;                  // 小船动态绘制（会移动 + 摇晃），不参与静态烘焙
       /* 等级着色贴图外扩了边距：按 _ox/_oy 与原尺寸对齐回格内原位 */
       const ox = ob.sp._ox || 0, oy = ob.sp._oy || 0;
       const bh = ob.sp._baseH || ob.sp.height;

@@ -23,13 +23,14 @@ class Entity {
     if (this.invulnT > 0) this.invulnT -= dt;
     this.shield = Math.max(0, this.shield);
   }
-  /** 圆形与地形的碰撞移动 */
-  moveWithCollision(world, dx, dy, r) {
+  /** 圆形与地形的碰撞移动（ignoreWater：玩家游泳时水域不再阻挡） */
+  moveWithCollision(world, dx, dy, r, ignoreWater) {
+    if (ignoreWater === undefined) ignoreWater = !!this.isPlayer;
     const tryStep = (nx, ny) => {
       const pts = [[nx - r, ny - r], [nx + r, ny - r], [nx - r, ny + r], [nx + r, ny + r], [nx, ny]];
       for (const p of pts) {
         const tx = Math.floor(p[0] / TILE_PX), ty = Math.floor(p[1] / TILE_PX);
-        if (world.solidTile(tx, ty)) return false;
+        if (world.solidTile(tx, ty, ignoreWater)) return false;
       }
       this.x = nx; this.y = ny; return true;
     };
@@ -48,7 +49,7 @@ class Entity {
     const steps = Math.ceil(d / step);
     for (let i = 0; i < steps; i++) {
       const nx = lerp(this.x, tx, (i + 1) / steps), ny = lerp(this.y, ty, (i + 1) / steps);
-      if (game && game.world.solidTile(Math.floor(nx / TILE_PX), Math.floor(ny / TILE_PX))) break;
+      if (game && game.world.solidTile(Math.floor(nx / TILE_PX), Math.floor(ny / TILE_PX), !!this.isPlayer)) break;
       this.x = nx; this.y = ny;
     }
   }
@@ -357,6 +358,29 @@ class Player extends Entity {
     const reg = regionAtTile(Math.floor(this.x / TILE_PX), Math.floor(this.y / TILE_PX));
     if (reg && reg.key === 'snow' && !this.buffs.has('B001')) { if (chance(dt * 0.15)) this.buffs.add('D306'); }
     if (reg && reg.key === 'desert' && !this.buffs.has('B011')) { if (chance(dt * 0.15)) this.buffs.add('D307'); }
+    /* 水域：进入不碰撞，获得「游泳」状态（移速 -50%）；离开水域立即恢复
+     * 驾船 / 上船 / 下船动画期间不触发（坐船不受游泳减速）
+     * 只在状态切换那一帧重算属性，避免每帧 recompute */
+    if (!this.sailing && !this.boarding && !this.disembarking && game && game.world && !game.inHome) {
+      const inWater = !!game.world.waterTile(Math.floor(this.x / TILE_PX), Math.floor(this.y / TILE_PX));
+      if (inWater !== this._swim) {
+        this._swim = inWater; this.inWater = inWater;
+        if (inWater) {
+          this.buffs.add('D308');
+          const now = Date.now();
+          if (!this._swimTipAt || now - this._swimTipAt > 4000) {   // 岸边来回时不刷屏
+            this._swimTipAt = now;
+            if (game.toast) game.toast('进入水域 · 游泳中（移速 -50%）', '#9fe8ff');
+          }
+        } else {
+          this.buffs.remove('D308');
+        }
+        this.recompute();
+      }
+    } else if (this._swim) {
+      this._swim = false; this.inWater = false;
+      this.buffs.remove('D308'); this.recompute();
+    }
   }
   serialize() {
     return {

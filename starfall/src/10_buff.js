@@ -60,7 +60,14 @@ const BUFFS = {
   D209: { name: '星核侵蚀', icon: '💎', type: 'debuff', rule: 2, dur: 12, dot: { hpPct: 2 }, mods: { allStat: -5 }, dispel: 2, desc: '全属性下降并持续伤害' },
   D301: { name: '重伤', icon: '🩹', type: 'debuff', rule: 1, dur: 10, mods: { healCut: 50 }, dispel: 1, desc: '受到治疗-50%' },
   D306: { name: '寒冷', icon: '🥶', type: 'debuff', rule: 2, dur: 6, dot: { hpPct: 0.3 }, mods: { aspd: -10 }, dispel: 0, desc: '雪原环境减益' },
-  D307: { name: '炎热', icon: '🥵', type: 'debuff', rule: 2, dur: 6, dot: { hpPct: 0.3 }, mods: { moveSpd: -8 }, dispel: 0, desc: '荒漠环境减益' }
+  D307: { name: '炎热', icon: '🥵', type: 'debuff', rule: 2, dur: 6, dot: { hpPct: 0.3 }, mods: { moveSpd: -8 }, dispel: 0, desc: '荒漠环境减益' },
+  /* 游泳：进入水域自动获得的状态类减益，离开水域立即移除（timer=false 表示不显示倒计时） */
+  D308: {
+    name: '游泳', icon: '🏊', type: 'debuff', rule: 4, dur: 9999, timer: false, dispel: 0,
+    mods: { moveSpd: -50 },
+    desc: '处于水域中：移动速度 -50%',
+    tip: '水域不再阻挡通行，但水中行动变慢；回到岸上自动恢复'
+  }
 };
 
 class BuffHolder {

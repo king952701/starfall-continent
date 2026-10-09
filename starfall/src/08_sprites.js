@@ -367,6 +367,39 @@ const Sprites = {
       return o.c;
     });
   },
+  /* 小船：Kenney Pirate Pack（CC0）顶视角小艇，素材未就绪/加载失败时用程序化小艇兜底 */
+  boat(i) {
+    i = ((Math.floor(i || 1) - 1) % 3 + 3) % 3 + 1;
+    if (!this._boatImg) this._boatImg = {};
+    if (!this._boatImg[i]) {
+      const rec = { img: new Image(), ok: false };
+      rec.img.onload = () => { rec.ok = true; };
+      rec.img.onerror = () => { rec.ok = false; };
+      rec.img.src = 'assets/boat/dinghy' + i + '.png';
+      this._boatImg[i] = rec;
+    }
+    if (this._boatImg[i].ok) return this._boatImg[i].img;
+    return this.key('boatFallback' + i, () => {
+      const o = CV(16, 26), x = o.x;
+      const hull = ['#8a5a34', '#7a4a2a', '#9a6a3a'][i - 1] || '#8a5a34';
+      x.beginPath();
+      x.moveTo(8, 1); x.quadraticCurveTo(15, 8, 13, 20); x.quadraticCurveTo(8, 26, 3, 20); x.quadraticCurveTo(1, 8, 8, 1);
+      x.closePath(); x.fillStyle = hull; x.fill();
+      x.fillStyle = shade(hull, -26); x.fillRect(4, 7, 8, 3); x.fillRect(4, 13, 8, 3);
+      x.fillStyle = shade(hull, 24); x.fillRect(6, 2, 4, 2);
+      return o.c;
+    });
+  },
+  /* 木码头：铺在岸边陆地格上的栈桥 */
+  dock() {
+    return this.key('dock', () => {
+      const o = CV(32, 32), x = o.x;
+      for (let k = 0; k < 4; k++) R(x, 2, 3 + k * 7, 28, 5, k % 2 ? '#6a4a2c' : '#8a6a42');
+      R(x, 2, 2, 28, 1, '#9a7a52'); R(x, 2, 29, 28, 1, '#4a3420');
+      R(x, 4, 14, 3, 3, '#4a3420'); R(x, 25, 14, 3, 3, '#4a3420');
+      return o.c;
+    });
+  },
   npc(seed, role) {
     return this.key('npc' + seed + role, () => {
       const o = CV(32, 48), x = o.x;
