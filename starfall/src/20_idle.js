@@ -50,6 +50,7 @@ const Idle = {
     if (!this.queue.length) { UI.toast('请先添加挂机任务', '#ff9a9a'); return false; }
     this.queue.forEach(t => { if (t.finished && (!t.loop || (t.loopN && t.loops >= t.loopN))) { } });
     this.resetProgress();
+    this._ap = { acc: 0, travelT: 0, dest: '' };
     this.running = true; this.startedAt = Date.now(); this.acc = 0;
     UI.toast('开始挂机：队列共 ' + this.queue.length + ' 项', '#9fd06a');
     return true;
@@ -57,6 +58,9 @@ const Idle = {
   stop(reason) {
     if (!this.running) return;
     this.running = false;
+    /* 停止挂机：取消自动导航，人物不再自行跑图 */
+    this._ap = { acc: 0, travelT: 0, dest: '' };
+    if (UI.game && UI.game.route) UI.game.cancelRoute();
     this.lastReport = this.report();
     UI.toast('挂机结束（' + (reason || '手动停止') + '）总时长 ' + fmtTime(Math.round(this.lastReport.sec)), '#ffd76a');
   },
@@ -233,11 +237,133 @@ const Idle = {
     this.total.lvUp += Math.max(0, p.lv - lv0);
   },
 
+  /* ---------- 在线挂机：驱动人物自动前往资源点，抵达后真实采集 ---------- */
+  _ap: { acc: 0, travelT: 0, dest: '' },
+  /** 找到当前任务对应的资源点（由近及远扩大搜索） */
+  findNode(g, t) {
+    const p = g.player;
+    const tx = Math.floor(p.x / TILE_PX), ty = Math.floor(p.y / TILE_PX);
+    for (const rad of [5, 12, 24, 40]) {
+      const list = g.world.objectsNear(tx, ty, rad) || [];
+      let best = null, bd = 1e9;
+      for (const it of list) {
+        const nd = it.o && it.o.node; if (!nd) continue;
+        if (t.type === 'fish') {
+          if (nd.skill !== 'fish') continue;
+          if (t.target && nd.area !== t.target) continue;
+        } else {
+          if (nd.itemId !== +t.target) continue;
+          if (nd.amount <= 0) continue;                       // 已采空，换一个
+        }
+        if ((nd.req || 1) > p.life[nd.skill].lv) continue;    // 等级不够，跳过
+        const dd = dist(it.tx, it.ty, tx, ty);
+        if (dd < bd) { bd = dd; best = { node: nd, tx: it.tx, ty: it.ty, d: dd }; }
+      }
+      if (best) return best;
+    }
+    return null;
+  },
+  /** 附近没有目标资源 → 找有该资源的大区中心 */
+  regionFor(g, t) {
+    const p = g.player, list = [];
+    if (t.type === 'fish') {
+      const reg = REGIONS.find(r => r.fishArea === t.target);
+      if (reg) list.push(reg);
+    } else {
+      const id = +t.target;
+      REGIONS.forEach(r => ['ore', 'wood', 'herb', 'bug'].forEach(k => (r.res[k] || []).forEach(e => {
+        if (e.id === id && list.indexOf(r) < 0) list.push(r);
+      })));
+    }
+    if (!list.length) return null;
+    let best = null, bd = 1e9;
+    for (const r of list) {
+      const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+      const dd = dist(p.x / TILE_PX, p.y / TILE_PX, cx, cy);
+      if (dd < bd) { bd = dd; best = { tx: Math.round(cx), ty: Math.round(cy), name: r.name }; }
+    }
+    return best;
+  },
+  travel(g, tx, ty, name) {
+    const key = tx + ',' + ty;
+    const same = g.route && g.route.tx === tx && g.route.ty === ty;
+    if (same) { this._ap.dest = key; return; }                // 已在导航中
+    g.setRoute(tx, ty, name);                                 // 静默设定（可能被手动移动取消，下一帧会重建）
+    if (this._ap.dest !== key) {                              // 换目标时才提示一次
+      this._ap.dest = key;
+      UI.toast('挂机中：自动前往 ' + (name || '资源点') + ' (' + tx + ', ' + ty + ')', '#9fd06a');
+    }
+  },
+  /** 战斗任务：自动前往目标大区，抵达后照常结算 */
+  autoPilotCombat(g, t, dt) {
+    const p = g.player, reg = REGION_BY_KEY[t.target];
+    if (!reg) return false;
+    const tx = Math.floor(p.x / TILE_PX), ty = Math.floor(p.y / TILE_PX);
+    const inside = tx >= (reg.x0 || 0) && tx <= (reg.x1 || 0) && ty >= (reg.y0 || 0) && ty <= (reg.y1 || 0);
+    if (inside) return false;                                 // 已在目标大区 → 走正常结算
+    this.travel(g, Math.round((reg.x0 + reg.x1) / 2), Math.round((reg.y0 + reg.y1) / 2), reg.name);
+    this._ap.travelT += dt;
+    return this._ap.travelT < 180;                            // 超时则退回原地结算，避免卡死
+  },
+  /** 返回 true = 本帧由「真实采集 / 自动前往」接管（不再原地空转产出） */
+  autoPilot(dt) {
+    const g = UI.game;
+    if (!g || g.inHome || !g.player || g.player.dead) return false;
+    const t = this.active();
+    if (!t) return false;
+    const p = g.player;
+    if (!p.bag.some(s => !s)) { t.finished = true; t.stopReason = '背包已满'; return false; }
+    if (t.type === 'combat') return this.autoPilotCombat(g, t, dt);
+    const hit = this.findNode(g, t);
+    if (!hit) {                                               // 附近没有 → 自动前往有该资源的大区
+      const dest = this.regionFor(g, t);
+      if (dest) { this.travel(g, dest.tx, dest.ty, dest.name); this._ap.travelT += dt; }
+      return this._ap.travelT < 120;                          // 找了 2 分钟还没到 → 退回原地结算
+    }
+    this._ap.travelT = 0;
+    const nd = hit.node;
+    const gx = hit.tx * TILE_PX + 16, gy = hit.ty * TILE_PX + 16;
+    if (dist(p.x, p.y, gx, gy) > 2.0 * TILE_PX) {             // 还没走到 → 导航过去，移动中不产出
+      this.travel(g, hit.tx, hit.ty, g.nodeName(nd));
+      this._ap.acc = 0;
+      return true;
+    }
+    if (g.route) g.cancelRoute();                             // 已抵达：停止导航
+    if ((nd.req || 1) > p.life[nd.skill].lv) { t.finished = true; t.stopReason = SKILL_CN[nd.skill] + '等级不足'; return false; }
+    const per = Math.max(0.35, g.gatherTime(nd));
+    this._ap.acc += dt;
+    if (this._ap.acc < per) return true;
+    this._ap.acc = 0;
+    /* 与手动一致：节点真实消耗；采空后自动补充（挂机视为持续产出） */
+    if (nd.amount <= 0 && nd.skill !== 'fish') {
+      nd.amount = nd.max; nd.respawnAt = 0;
+      const ch = g.world.chunks.get((nd.tx >> 4) + ',' + (nd.ty >> 4));
+      if (ch) ch.canvas = null;
+    }
+    g.finishGather({ skill: nd.skill, node: nd, hasTool: g.hasTool(nd.skill), quiet: true }, nd);
+    t.done++; t.sec += per;
+    this.total = this.total || this._initTotal();
+    this.total.sec += per; this.total.gathers++;
+    const tk = this.total.tasks[t.id] || (this.total.tasks[t.id] = { n: 0, type: t.type, target: t.target, loops: 0 });
+    tk.n += 1;
+    if (UI._nodeNd === nd) UI.refreshNode();
+    if (this.quotaDone(t)) {
+      if (t.loop && (t.loopN === 0 || t.loops + 1 < t.loopN)) { t.loops++; t.done = 0; t.sec = 0; tk.loops = t.loops; }
+      else { t.finished = true; }
+    }
+    return true;
+  },
+
   /* ---------- 主循环 ---------- */
   tick(dt) {
     if (!this.running) { Chat && Chat.tick && Chat.tick(dt); return; }
     Chat && Chat.tick && Chat.tick(dt);
     this.total = this.total || this._initTotal();
+    /* 在线挂机：先驱动人物自动前往资源点并真实采集；未接管时才走原地结算 */
+    if (this.autoPilot(dt)) {
+      if (this.queue.every(t => t.finished)) this.stop('队列已完成');
+      return;
+    }
     this.acc += dt;
     let guard = 0;
     while (this.acc >= 2 && guard++ < 6) { this.acc -= 2; this.advance(2); }
