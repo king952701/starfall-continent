@@ -1,8 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.starfall.continent" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+<widget id="com.xingluo.continent" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
   <name>星落大陆</name>
   <description>2D 开放世界 · 沙盒 RPG（纯 Canvas 手绘素材）</description>
-  <author email="dev@starfall.local" href="https://example.local">Starfall</author>
+  <!-- 作者信息使用仓库地址，避免指向占位域名 -->
+  <author email="dev@xingluo.local" href="https://github.com/king952701/starfall-continent">Xingluo Studio</author>
 
   <content src="index.html" />
 
@@ -26,6 +27,9 @@
   <platform name="android">
     <preference name="AndroidLaunchMode" value="singleTop" />
     <allow-intent href="market:*" />
+    <!-- 致谢页里的第三方链接交由系统浏览器打开 -->
+    <allow-intent href="https://*/*" />
+    <allow-intent href="http://*/*" />
   </platform>
 
   <engine name="android" spec="^15.1.0" />
