@@ -1342,7 +1342,8 @@ const UI = {
     zbtn('复位', fit, true);
     p.body.appendChild(zbar);
 
-    const wrap = el('div', 'treeWrap');
+    /* 画布容器：独立类名。旧版 DOM 天赋树的 .treeWrap 是 4 列网格，会把画布压成 1/4 宽 */
+    const wrap = el('div', 'treeBox');
     const cv = el('canvas');
     cv.width = 700; cv.height = 430;
     cv.style.cssText = 'display:block;background:rgba(8,10,18,.55);border:1px solid rgba(255,255,255,.08);' +

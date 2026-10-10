@@ -198,16 +198,8 @@ select,input{background:#0c1120;border:1px solid var(--line);color:var(--txt);pa
 canvas.ic{image-rendering:pixelated}
 
 /* 天赋树 */
-.treeWrap{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.tCol{border:1px solid #2a3355;background:#0a0f1e;padding:5px;min-height:120px}
-.tCol h4{font-size:12px;color:var(--gold);text-align:center;font-weight:400;margin-bottom:4px}
-.tNode{border:1px solid #2a3355;background:#0f1528;padding:3px 5px;margin-bottom:4px;cursor:pointer;font-size:11px;position:relative}
-.tNode:hover{border-color:var(--gold)}
-.tNode.max{border-color:#ffd76a;background:#23294a}
-.tNode.lock{opacity:.45}
-.tNode .n{color:#e8ecf8}
-.tNode .p{float:right;color:var(--gold)}
-.tNode .d{color:#8f9bc4;font-size:10px}
+/* 天赋树画布容器（旧版 DOM 天赋树的 4 列网格样式已随 tCol/tNode 一并移除） */
+.treeBox{width:100%}
 
 /* ============ Tab 资源导航地图 ============ */
 #ovOverlay{position:absolute;inset:0;z-index:70;background:rgba(3,6,14,.74);
