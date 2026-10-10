@@ -20,6 +20,8 @@ const Interlock = {
   lastRightTs: 0,            // 最近一次右键按下的时间戳（用于手势扩展判定）
   tipShown: false,           // 提示是否已在本次会话弹过
   KEY: 'sf.gesture.warn',    // 手势扩展嫌疑标记（跨会话）
+  lastTapTs: 0,              // 上次轻触时间戳（双击放大判定）
+  lastTapX: 0, lastTapY: 0,  // 上次轻触坐标
 
   /* 游戏容器：本游戏为整页全屏，容器即 body（画布 / HUD / 面板都在其内） */
   container() { return document.body || document.documentElement; },
@@ -105,11 +107,49 @@ const Interlock = {
       if (BLOCK[e.key]) e.preventDefault();
     }, false);
 
-    /* 9) 触摸端：touchmove 非被动监听，游戏区域一律 preventDefault，
-     *    阻止触摸滚动与双指缩放（面板内部滚动由 touch-action 放行） */
+    /* 9) 触摸端隔离【必做】：阻止移动端触摸滚动、下拉刷新、双指缩放页面、双击放大、
+     *    长按放大镜 / 系统菜单、Safari 私有手势、双指滑动返回。
+     *    说明：preventDefault 只拦「浏览器默认行为」，同一个事件上的游戏回调照常执行，
+     *    因此摇杆 / 按住攻击 / 游戏自己的双指缩放视野都不受影响。 */
+    const SCROLL_OK = '.pbody,#chatMsgs,#log,#mMenuList';                 // 允许上下滚动的白名单
+    const TAP_OK = '.btn,.cell,button,.pclose,.ctab,.mBtnI,.mbtn,.mMenuBtn'; // 允许连点的交互元素
+    const hit = (el, sel) => !!(el && el.closest && el.closest(sel));
+
+    /* 9.1 双指（及以上）落下 → 拦截浏览器双指缩放页面 / 双指滑动返回 */
+    this.bind(doc, 'touchstart', e => {
+      if (e.touches && e.touches.length > 1) {                 // 多指 = 浏览器手势，一律拦掉
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      /* 9.2 双击：300ms 内同一位置二次轻触 → 阻止 iOS / Android 双击放大页面
+       *     （按钮 / 格子等交互元素放行，不挡玩家自己的连点） */
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      const now = Date.now();
+      if (now - this.lastTapTs < 300
+        && Math.abs(t.clientX - this.lastTapX) < 30
+        && Math.abs(t.clientY - this.lastTapY) < 30
+        && !hit(e.target, TAP_OK)) {
+        if (e.cancelable) e.preventDefault();
+        this.lastTapTs = 0;                                     // 连点不再连锁判定
+        return;
+      }
+      this.lastTapTs = now; this.lastTapX = t.clientX; this.lastTapY = t.clientY;
+    }, { passive: false });
+
+    /* 9.3 Safari 私有手势（prevail 双指缩放 / 旋转整个页面） */
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(tp =>
+      this.bind(doc, tp, e => { if (e.cancelable) e.preventDefault(); }, false));
+
+    /* 9.4 iOS 长按放大镜 / Force Touch 预览（touchforcechange 会触发 3D Touch 菜单） */
+    this.bind(doc, 'touchforcechange', e => {
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    /* 9.5 触摸移动：非白名单区域一律 preventDefault → 禁掉页面滚动与下拉刷新 */
     this.bind(doc, 'touchmove', e => {
-      if (this.isEditable(e.target)) return;
-      if (e.target && e.target.closest && e.target.closest('.pbody,#chatMsgs,#log,#mMenuList')) return; // 可滚动区域放行
+      if (this.isEditable(e.target)) return;                   // 输入框内放行（选词 / 光标）
+      if (hit(e.target, SCROLL_OK)) return;                    // 面板内容 / 聊天记录 / 日志仍可上下滚
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
 

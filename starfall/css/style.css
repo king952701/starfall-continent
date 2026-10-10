@@ -21,9 +21,12 @@ input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;-moz-use
   -ms-user-select:text;user-select:text}
 /* 禁止图片 / 链接 / 画布被拖拽（避免误触发系统拖放或“新标签打开”） */
 img,a,canvas{-webkit-user-drag:none;user-drag:none;-webkit-user-select:none;user-select:none}
-/* 触摸隔离：画布 / HUD / 开场界面 / 摇杆 / 触屏按钮 禁用滚动与双指缩放 */
-#cv,#hud,#screenRoot,#menuBar,#lifeMenu,.joy,.mActs,.mMid,.mMenu,.mbtn,.mMenuBtn{touch-action:none}
-/* 面板内容区、聊天记录、日志仍可上下滚动 */
+/* 触摸隔离【必做】：整页默认禁用一切浏览器触摸行为（滚动 / 下拉刷新 / 双指缩放 /
+ * 双击放大 / 双指滑动返回）；下方白名单才允许纵向滚动。
+ * 配合 41_input_isolation.js 的 JS 兜底（多指 touchstart、Safari gesturestart 等）。 */
+html,body{-ms-touch-action:none;touch-action:none}
+body,body *{-ms-touch-action:none;touch-action:none}
+/* 白名单：面板内容 / 聊天记录 / 日志 / 手机菜单列表 → 允许纵向滚动（优先级高于上面的通配符） */
 #panelRoot,.pbody,#chatMsgs,#log,#mMenuList{touch-action:pan-y}
 /* 鼠标手势扩展提示条 */
 .ilTip{position:absolute;left:50%;top:78px;transform:translateX(-50%);z-index:90;max-width:min(90vw,560px);
