@@ -26,15 +26,25 @@ const GEAR_LINK_LINES = [
 ];
 
 const Chat = {
-  msgs: [],
-  max: 160,
-  channels: ['世界', '附近'],
+  /** 九个独立频道：每个频道一个独立消息箱，互不干扰 */
+  chans: ['世界', '中文', 'English', '交易', '队伍', '公会', '私聊', '好友', '系统'],
+  msgs: {},                 // ch -> [message]
+  max: 80,                  // 每个频道的保留条数
   npcT: 0,
 
+  /** 取某频道的消息箱（不存在则建） */
+  box(ch) {
+    ch = ch || '世界';
+    if (!this.msgs[ch]) this.msgs[ch] = [];
+    return this.msgs[ch];
+  },
   push(m) {
     m.time = Date.now();
-    this.msgs.push(m);
-    while (this.msgs.length > this.max) this.msgs.shift();
+    m.ch = this.chans.indexOf(m.ch) >= 0 ? m.ch : '世界';   // 旧数据/异常频道归入世界
+    const b = this.box(m.ch);
+    b.push(m);
+    while (b.length > this.max) b.shift();
+    if (this.onPush) this.onPush(m);      // 未读角标钩子（UI 填）
     if (this.onChange) this.onChange();
     return m;
   },
@@ -59,7 +69,8 @@ const Chat = {
       link: isGear ? gearToLink(inst, who) : { t: 'item', id: inst.id, q: inst.q, n: inst.n || 1, owner: who }
     });
   },
-  system(text) { return this.push({ who: '系统', ch: '世界', text: text, sys: true }); },
+  /** 系统消息走「系统」频道 */
+  system(text) { return this.push({ who: '系统', ch: '系统', text: text, sys: true }); },
 
   /** 在线期间随机冒出其他玩家的消息；偶尔附带一件随机装备链接 */
   tick(dt) {
@@ -79,6 +90,17 @@ const Chat = {
     }
   },
 
-  serialize() { return { msgs: this.msgs.slice(-60) }; },
-  load(d) { this.msgs = (d && d.msgs) || []; }
+  serialize() {
+    const o = {};
+    for (const k in this.msgs) o[k] = this.msgs[k].slice(-30);
+    return { msgs: o };
+  },
+  load(d) {
+    if (!d || !d.msgs) return;
+    if (Array.isArray(d.msgs)) {           // 旧版扁平结构 → 按各自 ch 归箱
+      d.msgs.forEach(m => this.push(m));
+    } else {
+      for (const k in d.msgs) this.box(k).push(...d.msgs[k]);
+    }
+  }
 };

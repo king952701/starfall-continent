@@ -71,6 +71,7 @@ const Market = {
       return { ok: true, msg: '成交：' + ITEMS[inst.id].name + '　收入 ' + fmt(gain) + ' 金（已扣 ' + Math.round(MARKET_TAX * 100) + '% 税）' };
     }
     this.remove(lid);
+    if (typeof Snd !== 'undefined' && Snd.play) Snd.play('buy');
     return { ok: true, msg: '购买成功：' + (inst.type === 'gear' ? gearFullName(inst) : ITEMS[inst.id].name) + '　-' + fmt(price) + ' 金' };
   },
 

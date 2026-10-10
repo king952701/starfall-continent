@@ -236,6 +236,7 @@ const Weather = {
       if (this.inten > 0.45 && this.boltT <= 0) {
         this.flash = 1; this.dbl = 0.17; this.boltSeed = irnd(0, 2); this.boltX = rnd(0.12, 0.88);
         this.boltT = rnd(4.5, 15);
+        if (typeof Snd !== 'undefined' && Snd.play) Snd.play('thunder');   // 雷声（此前只有闪光没声音）
       }
     }
     if (this.dbl > 0) { this.dbl -= dt; if (this.dbl <= 0) { this.flash = Math.max(this.flash, 0.75); this.dbl = -1; } }

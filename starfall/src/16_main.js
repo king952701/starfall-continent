@@ -247,7 +247,7 @@ addEventListener('DOMContentLoaded', () => {
   // 预先加载开源瓦片素材（未完成也不阻塞，地形会回退程序化贴图）
   Assets.load(ok => {
     $('titleFoot').textContent = ok
-      ? '地表采用 Kenney CC0 开源瓦片 ｜ 角色 / 图标 / 特效由系统程序化生成'
+      ? '地表瓦片为原创生成素材 ｜ 角色 / 图标 / 特效由系统程序化生成'
       : '贴图 / 立绘 / 特效 全部由系统程序化生成';
     // 若已有世界实例，让区块用新素材重新烘焙
     if (window.GAME) for (const ch of window.GAME.world.chunks.values()) ch.canvas = null;
