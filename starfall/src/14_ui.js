@@ -134,6 +134,7 @@ const UI = {
       m.classList.toggle('hide', !open);
       lifeBtn.classList.toggle('on', open);
       if (!open) return;
+      this.syncLifeMenu();
       m.innerHTML = '';
       const item = (icon, label, fn) => {
         const b = el('div', 'mBtnI');
@@ -169,6 +170,74 @@ const UI = {
         }
       });
     }
+    /* 独立容器：按住任意处拖拽自由移动（点击 / 拖拽自动区分，位置记忆） */
+    this.makeMenuBarDraggable();
+  },
+
+  /** 功能按钮栏拖拽：按下后位移 >6px 判定为拖拽，松手记忆位置；
+   *  拖拽结束的第一次 click 会被吞掉，不会误触按钮 */
+  makeMenuBarDraggable() {
+    const bar = $('menuBar');
+    if (!bar || bar._dragBar) return;
+    bar._dragBar = true;
+    let st = null, moved = false;
+    const down = e => {
+      if (e.button !== undefined && e.button !== 0) return;    // 只响应左键
+      const r = bar.getBoundingClientRect();
+      st = { dx: e.clientX - r.left, dy: e.clientY - r.top, x: e.clientX, y: e.clientY };
+      moved = false;
+    };
+    const move = e => {
+      if (!st) return;
+      if (!moved && Math.abs(e.clientX - st.x) + Math.abs(e.clientY - st.y) < 6) return;
+      moved = true;
+      this.placeMenuBar(e.clientX - st.dx, e.clientY - st.dy);
+    };
+    const up = () => {
+      if (st && moved) {
+        this._mbSwallow = true;                                // 吞掉拖完的这次 click
+        setTimeout(() => { this._mbSwallow = false; }, 0);
+        try { localStorage.setItem('sf.menubar.pos', JSON.stringify({ l: bar.style.left, t: bar.style.top })); } catch (e) { /* 忽略 */ }
+      }
+      st = null;
+    };
+    bar.addEventListener('mousedown', down);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    bar.addEventListener('click', e => {                       // 捕获阶段拦截拖拽后的误触
+      if (this._mbSwallow) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    this.restoreMenuBarPos();
+  },
+  /** 把按钮栏放到指定位置（clamp 在视口内），生活菜单同步跟随到下方 */
+  placeMenuBar(x, y) {
+    const bar = $('menuBar');
+    if (!bar) return;
+    x = clamp(Math.round(x), 4, Math.max(4, window.innerWidth - bar.offsetWidth - 4));
+    y = clamp(Math.round(y), 4, Math.max(4, window.innerHeight - 50));
+    bar.style.left = x + 'px';
+    bar.style.top = y + 'px';
+    bar.style.transform = 'none';
+    this.syncLifeMenu();
+  },
+  /** 生活菜单跟随按钮栏正下方 */
+  syncLifeMenu() {
+    const bar = $('menuBar'), life = $('lifeMenu');
+    if (!bar || !life) return;
+    life.style.left = bar.style.left;
+    life.style.top = (parseFloat(bar.style.top) + bar.offsetHeight + 6) + 'px';
+    life.style.transform = 'none';
+  },
+  /** 恢复上次拖拽的位置 */
+  restoreMenuBarPos() {
+    const bar = $('menuBar');
+    if (!bar) return;
+    try {
+      const d = JSON.parse(localStorage.getItem('sf.menubar.pos') || 'null');
+      if (!d) return;
+      const l = parseFloat(d.l), tp = parseFloat(d.t);
+      if (isFinite(l) && isFinite(tp)) this.placeMenuBar(l, tp);
+    } catch (e) { /* 忽略 */ }
   },
 
   buildSkillBar() {

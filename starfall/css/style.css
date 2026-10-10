@@ -116,7 +116,7 @@ body,body *{-ms-touch-action:none;touch-action:none}
 
 /* ============ 顶部系统功能按钮栏（Feather 图标 · MIT） ============ */
 #menuBar{position:absolute;top:6px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;
-  justify-content:center;gap:4px;z-index:22;max-width:min(62vw,640px)}
+  justify-content:center;gap:4px;z-index:22;max-width:min(62vw,640px);cursor:move;pointer-events:auto}
 .mBtnI{display:flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:44px;
   border-radius:9px;background:rgba(10,14,26,.85);border:1px solid #2a3355;color:#cfe0ff;cursor:pointer;
   user-select:none;pointer-events:auto}
