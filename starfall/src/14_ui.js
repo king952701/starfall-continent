@@ -112,7 +112,7 @@ const UI = {
     rank: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
     horn: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
     menu: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
-    mount: '<path d="M5 21c-1-5 0-8 3-11l-1-5 4 2 3-4 2 4c3 1 4 5 2 9l-2 5"/><path d="M9.5 12h.01"/>',
+    mount: '<path d="M20 9c1.2-4.2-2-7-6-7-5 0-8.2 4-8.2 9 0 2.2-1.8 4-3.8 5l2 2c1.4-1 3-1.2 4.2-2l2.8 5h3.2l-1.2-5.2C16.6 15.6 19 13 20 9z"/><circle cx="15.6" cy="5.6" r="0.7"/>',
     pet: '<circle cx="7.5" cy="8.5" r="1.8"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="16.5" cy="8.5" r="1.8"/><path d="M8 15c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.2-1.8 4-4 4s-4-1.8-4-4z"/>'
   },
   iconSvg(key) {
@@ -801,7 +801,7 @@ const UI = {
     const top = mob ? Math.max(6, Math.round((vh - ph) / 2)) : (parseInt(pt.el.style.top) || 60);
     pt.el.style.left = clamp(left, 6, Math.max(6, vw - pw - 6)) + 'px';
     pt.el.style.top = clamp(top, 6, Math.max(6, vh - ph - 6)) + 'px';
-    if (pt.body) pt.body.style.height = (ph - 30) + 'px';   // 内容区高度跟随缩放，超出部分可滚动
+    /* 内容区高度由 CSS .pbody{height:calc(100% - 30px)} 自适应 */
     return pt;
   },
   fitPanels() { for (const k in this.panels) this.fitPanel(k); },
@@ -934,15 +934,17 @@ const UI = {
     let pw = Math.max(200, Math.min(w, vw - 16));
     let ph = Math.max(140, Math.min(h, vh - 20));
     const mob = (typeof Mobile !== 'undefined' && Mobile.on);
+    this._cascade = ((this._cascade || 0) + 1) % 6;
+    const coff = (x === undefined && !mob) ? this._cascade * 26 : 0;
     const left = mob ? Math.round((vw - pw) / 2) : (x === undefined ? Math.round((vw - pw) / 2) : x);
-    const top = mob ? Math.max(6, Math.round((vh - ph) / 2)) : (y === undefined ? 60 : y);
+    const top = mob ? Math.max(6, Math.round((vh - ph) / 2)) : (y === undefined ? 60 + coff : y);
     p.style.width = pw + 'px'; p.style.height = ph + 'px';
+    this._zTop = (this._zTop || 50) + 1; p.style.zIndex = this._zTop;   // 新开/点击面板置顶
     p.style.left = clamp(left, 6, Math.max(6, vw - pw - 6)) + 'px';
     p.style.top = clamp(top, 6, Math.max(6, vh - ph - 6)) + 'px';
     const closeTxt = (typeof Mobile !== 'undefined' && Mobile.on) ? '✕ 关闭' : '✕';
     const t = el('div', 'ptitle', '<span>' + title + '</span><span class="pclose" title="关闭">' + closeTxt + '</span>');
     const b = el('div', 'pbody');
-    b.style.height = (ph - 30) + 'px';
     b.style.overflowY = 'auto'; b.style.overflowX = 'hidden';
     p.appendChild(t); p.appendChild(b);
     this.elRoot.appendChild(p);
@@ -2245,6 +2247,7 @@ const UI = {
     const w = $('chatWrap');
     if (!w) return;
     w.classList.toggle('hide', !open);
+    if (typeof document !== 'undefined' && document.body) document.body.classList.toggle('chat-open', open);
     if (open) w.classList.remove('fold');
     if (this.chatBtnEl) this.chatBtnEl.classList.toggle('on', open);
     try { localStorage.setItem('sf.chat.win', open ? '1' : '0'); } catch (e) { /* 忽略 */ }

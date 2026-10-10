@@ -181,7 +181,16 @@ const Settings = {
   FPS: [[15, '15 fps'], [30, '30 fps'], [60, '60 fps'], [120, '120 fps'], [0, '无上限']],
   ZOOMS: [[0.6, '×0.6'], [0.8, '×0.8'], [1, '×1.0 标准'], [1.5, '×1.5'], [2, '×2.0']],
   data: { master: 70, sfx: 70, music: 25, amb: 55, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ambient: 1,
-    bgm: 1, sfxDensity: 'std', bloom: 2, tint: 0.08, dprCap: 2, ui: {} },
+    bgm: 1, sfxDensity: 'std', bloom: 2, tint: 0.08, dprCap: 2, ui: {}, hotkeys: {} },
+  /* 可重绑快捷键表：[动作, 中文名, 默认键]；WASD 移动 / 技能槽 1-6 / Esc / Enter / Ctrl+S 为固定键 */
+  HK_LIST: [
+    ['interact', '交互 / 采集', 'e'],
+    ['bag', '背包', 'b'], ['char', '角色', 'c'], ['craft', '制作', 'k'], ['talent', '天赋', 't'],
+    ['skills', '生活技能', 'v'], ['idle', '挂机', 'o'], ['map', '地图', 'm'], ['overview', '总览地图', 'tab'],
+    ['ach', '成就', 'j'], ['codex', '图鉴', 'p'], ['rank', '排行榜', 'l'], ['market', '拍卖', 'y'],
+    ['settings', '设置', 'u'], ['potion', '快喝药水', 'q'], ['roll', '翻滚', ' ']
+  ],
+  hkLabel(k) { return k === ' ' ? '空格' : k === 'tab' ? 'Tab' : String(k).toUpperCase(); },
   editMode: false,
   _panel: null,
 
@@ -210,6 +219,7 @@ const Settings = {
       if (raw) { Object.assign(this.data, JSON.parse(raw)); this._loaded = true; }
     } catch (e) { }
     this.data.ui = this.data.ui || {};
+    this.data.hotkeys = this.data.hotkeys || {};
     Snd.vol.master = this.data.master; Snd.vol.sfx = this.data.sfx; Snd.vol.music = this.data.music;
     Snd.vol.amb = (this.data.amb === undefined ? 55 : this.data.amb);
   },
@@ -276,7 +286,7 @@ const Settings = {
   /* ---------- UI 布局：拖动 / 拉伸 / 缩小 ---------- */
   uiTargets() {
     const list = [];
-    ['topbar', 'mmwrap', 'bottom', 'log', 'chatWrap', 'progWrap', 'enemyBar'].forEach(id => {
+    ['topbar', 'mmwrap', 'bottom', 'log', 'chatWrap', 'enemyBar'].forEach(id => {
       const e = document.getElementById(id); if (e) list.push([id, e]);
     });
     ['joy', 'mActs', 'mMid', 'mMenu'].forEach(cls => {
@@ -561,12 +571,44 @@ const Settings = {
     });
     zr.appendChild(zbox);
 
-    /* 7) 全部重置 */
+    /* 8) 快捷键设置：点击键位按钮 → 按下新键即完成重绑（Esc 取消） */
+    sec('快捷键 / Hotkeys');
+    pan.body.appendChild(el('div', 'mini', '点击键位按钮后按下新键即可重绑；Esc 取消。WASD 移动、技能槽 1-6、Ctrl+S 存档为固定键位。'));
+    this.HK_LIST.forEach(h => {
+      const r = row(h[1]);
+      const act = h[0], def = h[2];
+      const b = el('button', 'btn', this.hkLabel(this.data.hotkeys[act] || def));
+      b.title = '点击后按下新按键；Esc 取消';
+      b.onclick = () => {
+        if (b._capturing) return;
+        b._capturing = true;
+        b.textContent = '按下新按键…';
+        const cap = ev => {
+          if (ev.repeat) return;
+          ev.preventDefault(); ev.stopPropagation();
+          window.removeEventListener('keydown', cap, true);
+          b._capturing = false;
+          const k = ev.key.toLowerCase();
+          if (k !== 'escape') {
+            const FIXED = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', '1', '2', '3', '4', '5', '6', 'enter', 'escape'];
+            const clash = this.HK_LIST.find(x => x[0] !== act && (this.data.hotkeys[x[0]] || x[2]) === k);
+            if (FIXED.includes(k)) UI.toast('该键为固定键位，不可绑定', '#ff9a9a');
+            else if (clash) UI.toast('该键已绑定「' + clash[1] + '」，请换一个', '#ff9a9a');
+            else { this.data.hotkeys[act] = k; this.save(); Snd.play('ok'); }
+          }
+          this.open();                                  // 重绘刷新所有键位显示
+        };
+        window.addEventListener('keydown', cap, true);
+      };
+      r.appendChild(b);
+    });
+
+    /* 9) 全部重置 */
     const bottom = el('div', 'setBtns');
     const bAll = el('button', 'btn', '恢复全部默认设置');
     bAll.onclick = () => {
       this.data = { master: 70, sfx: 70, music: 25, amb: 55, quality: 'high', fps: 60, auto: 1, zoom: 1, weather: 1, ambient: 1,
-        bgm: 1, sfxDensity: 'std', bloom: 2, tint: 0.08, dprCap: 2, ui: {} };
+        bgm: 1, sfxDensity: 'std', bloom: 2, tint: 0.08, dprCap: 2, ui: {}, hotkeys: {} };
       this.save(); this.applyAll(); Snd.play('ok'); this.open();
     };
     bottom.appendChild(bAll);

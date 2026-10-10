@@ -79,28 +79,31 @@ class Game {
       this.keys[k] = true;
       if (k === ' ') e.preventDefault();
       if (e.repeat) return; // 按住不放时忽略系统自动重复，避免采集进度被反复重置
+      /* 快捷键查表：可在设置面板「快捷键」中重绑（Settings.data.hotkeys，缺省回退默认键） */
+      const HK = (typeof Settings !== 'undefined' && Settings.data && Settings.data.hotkeys) || {};
+      const hk = (a, d) => HK[a] || d;
       if (k === 'escape') { if (document.activeElement === $('chatInput')) $('chatInput').blur(); UI.closeAll(); return; }
       // 在聊天输入框 / 下拉框中打字时，不触发任何游戏快捷键
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
       if (k === 'enter') { UI.focusChat(); return; }
-      if (k === 'tab') { e.preventDefault(); UI.toggleOverview(); return; }
+      if (k === hk('overview', 'tab')) { e.preventDefault(); UI.toggleOverview(); return; }
       if (this.player.dead) return;
-      if (k === 'e') this.tryInteract();
-      if (k === 'b') UI.toggle('bag', () => UI.openBag());
-      if (k === 'c') UI.toggle('char', () => UI.openChar());
-      if (k === 'k') UI.toggle('craft', () => UI.openCraft());
-      if (k === 't') UI.toggle('talent', () => UI.openTalent());
-      if (k === 'v') UI.toggle('skills', () => UI.openSkills());
-      if (k === 'm') UI.toggle('map', () => UI.openMap());
-      if (k === 'j') UI.toggle('ach', () => UI.openAch());
-      if (k === 'p') UI.toggle('codex', () => UI.openCodex());
-      if (k === 'l') UI.toggle('rank', () => UI.openRank());
-      if (k === 'o') UI.toggle('idle', () => UI.openIdle());
-      if (k === 'y') UI.toggle('market', () => UI.openMarket());
-      if (k === 'u') { if (typeof Settings !== 'undefined') Settings.open(); }
-      if (k === 'q') this.quickPotion();
-      if (k === ' ') this.player.roll(this);
+      if (k === hk('interact', 'e')) this.tryInteract();
+      if (k === hk('bag', 'b')) UI.toggle('bag', () => UI.openBag());
+      if (k === hk('char', 'c')) UI.toggle('char', () => UI.openChar());
+      if (k === hk('craft', 'k')) UI.toggle('craft', () => UI.openCraft());
+      if (k === hk('talent', 't')) UI.toggle('talent', () => UI.openTalent());
+      if (k === hk('skills', 'v')) UI.toggle('skills', () => UI.openSkills());
+      if (k === hk('map', 'm')) UI.toggle('map', () => UI.openMap());
+      if (k === hk('ach', 'j')) UI.toggle('ach', () => UI.openAch());
+      if (k === hk('codex', 'p')) UI.toggle('codex', () => UI.openCodex());
+      if (k === hk('rank', 'l')) UI.toggle('rank', () => UI.openRank());
+      if (k === hk('idle', 'o')) UI.toggle('idle', () => UI.openIdle());
+      if (k === hk('market', 'y')) UI.toggle('market', () => UI.openMarket());
+      if (k === hk('settings', 'u')) { if (typeof Settings !== 'undefined') Settings.open(); }
+      if (k === hk('potion', 'q')) this.quickPotion();
+      if (k === hk('roll', ' ')) this.player.roll(this);
       if (['1', '2', '3', '4', '5', '6'].includes(k)) this.player.castSkill(+k, this);
       if (k === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.save(true); }
     });
@@ -324,7 +327,7 @@ class Game {
     if ((dx || dy) && this.task) this.stopTask('移动中断了自动采集');
     if (dx || dy) { if (this.route) this.cancelRoute('已取消导航'); }
     else if (this.route && !this.gather && !this.inHome) { this.updateRoute(dt); return; }
-    if (this.gather) { dx = dy = 0; }
+    if (this.gather && (dx || dy)) this.interruptGather('移动打断了采集');   // 采集可被移动打断
     if (p.sailing) { this.boatMove(dt, dx, dy); return; }   // 驾船：船在水面航行
     if (this._board || this._disembark) return;             // 上 / 下船动画中不可操作
     if (dx || dy) {
@@ -775,27 +778,29 @@ class Game {
     else UI.tipHide('node');
   }
 
-  /* ---------- 手动单次采集（进度条） ---------- */
+  /* ---------- 手动单次采集（进度条画在资源点上方，屏幕空间） ---------- */
   startGather(nd) {
     if (this.gather) return;
     const node = nd.node || nd;
-    this.gather = { node: node, t: 0, total: this.gatherTime(node), skill: node.skill, hasTool: this.hasTool(node.skill) };
-    $('progWrap').classList.remove('hide');
+    this.gather = { node: node, t: 0, total: this.gatherTime(node), skill: node.skill, hasTool: this.hasTool(node.skill), hp0: this.player.hp };
+  }
+  /** 中断采集（移动 / 受到伤害都会走到这里） */
+  interruptGather(msg) {
+    this.gather = null;
+    if (msg && typeof UI !== 'undefined' && UI.log) UI.log(msg, '#ff9a9a');
   }
   updateGather(dt) {
     const g = this.gather;
     if (!g) return;
     const nd = g.node, p = this.player;
-    if (nd.amount <= 0) { this.gather = null; $('progWrap').classList.add('hide'); return; }
+    if (nd.amount <= 0) { this.gather = null; return; }
+    /* 采集可被打断：受到任何伤害（怪物攻击等）即中断 */
+    if (p.hp < g.hp0) { this.interruptGather('受到攻击，采集中断'); return; }
+    g.hp0 = p.hp;
     const dd = dist(p.x, p.y, nd.tx * TILE_PX + 16, nd.ty * TILE_PX + 16);
-    if (dd > 3.2 * TILE_PX) { this.gather = null; $('progWrap').classList.add('hide'); return; }
+    if (dd > 3.2 * TILE_PX) { this.gather = null; return; }
     g.t += dt;
-    $('progFill').style.width = clamp(g.t / g.total * 100, 0, 100) + '%';
-    /* 黄色高亮进度条：显示剩余倒计时（秒） */
-    $('progTxt').textContent = ({ mine: '采矿中', log: '伐木中', herb: '采药中', bug: '捕虫中', fish: '钓鱼中' })[g.skill]
-      + '　剩余 ' + Math.max(0, g.total - g.t).toFixed(1) + 's';
     if (g.t < g.total) return;
-    $('progWrap').classList.add('hide');
     this.gather = null;
     this.finishGather(g, nd);
   }
@@ -1228,6 +1233,7 @@ class Game {
     this.drawFloats(ctx);
     ctx.restore();
     if (!this.inHome) this.drawNodeLabels(ctx);   // 附近 2 格内采集资源的金色名称（屏幕空间，字号不随缩放变化）
+    this.drawGatherBar(ctx, cam, z);              // 采集进度条（屏幕空间，画在资源点上方）
     this.drawAmbient(ctx);             // 环境粒子（屏幕空间，落在角色之前）
     this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
     if (typeof Weather !== 'undefined') Weather.drawSky(ctx, this);   // 雨丝 / 雪花 / 阵风 / 闪电（最上层）
@@ -1237,12 +1243,14 @@ class Game {
     if (this.interactHint) {
       ctx.font = '14px "PingFang SC",sans-serif'; ctx.textAlign = 'center';
       const py = (this.player.y - cam.y) * z;     // 世界 → 屏幕（含缩放）
-      const y = py - 60;
       ctx.fillStyle = 'rgba(8,12,24,.8)';
       const wpx = ctx.measureText(this.interactHint).width + 20;
       ctx.fillRect(cam.w / 2 - wpx / 2, py - 78, wpx, 22);
+      /* 文字基线对齐底板（此前 y-62 浮在底板上方 44px），加黑描边保证亮地形可读 */
+      ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineWidth = 3;
+      ctx.strokeText(this.interactHint, cam.w / 2, py - 62);
       ctx.fillStyle = '#ffd76a';
-      ctx.fillText(this.interactHint, cam.w / 2, y - 62);
+      ctx.fillText(this.interactHint, cam.w / 2, py - 62);
       ctx.textAlign = 'left';
     }
   }
@@ -1479,12 +1487,30 @@ class Game {
     ctx.strokeStyle = 'rgba(255,215,106,.35)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(this.mouse.worldX, this.mouse.worldY, 6, 0, 6.28); ctx.stroke();
   }
+  /** 采集进度条：画在资源点上方（屏幕空间，替代原屏幕中央的 DOM 黑条——那个条
+   *  恰好悬在人物头顶、300px 宽近纯黑，视觉上就是一块黑色长方块） */
+  drawGatherBar(ctx, cam, z) {
+    const g = this.gather;
+    if (!g || this.inHome) return;
+    const nd = g.node;
+    const sx = (nd.tx * TILE_PX + 16 - cam.x) * z, sy = (nd.ty * TILE_PX + 16 - cam.y) * z;
+    const w = 56, h = 6, x = sx - w / 2, y = sy - 30;
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    const txt = '剩余 ' + Math.max(0, g.total - g.t).toFixed(1) + 's';
+    ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineWidth = 3; ctx.strokeText(txt, sx, y - 4);
+    ctx.fillStyle = '#ffd76a'; ctx.fillText(txt, sx, y - 4);
+    ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+    ctx.fillStyle = '#ffd76a'; ctx.fillRect(x, y, w * clamp(g.t / g.total, 0, 1), h);
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1);
+    ctx.textAlign = 'left';
+  }
   drawMonster(ctx, m) {
     const frames = m.sprite.frames, size = m.size();
     /* 受击时抖一下（4 帧浮动，受击帧取最后一帧） */
     const f = (m.hitT > 0) ? 3 : Math.floor(this.timeSec * 3 + m.x) % 4;
     const cv = frames[f];
-    const wpx = 32 * clamp(size, 0.6, 3.2) * 1.4, hpx = wpx;
+    const wpx = 32 * clamp(size, 0.6, 3.2) * 1.4 * 2, hpx = wpx;   // 全体怪物渲染放大 2 倍（影子/死亡帧/选中圈随 wpx 联动）
     const cx = Math.round(m.x - wpx / 2), cy = Math.round(m.y - hpx + 12);
     this.drawShadow(ctx, m.x, m.y, wpx * 0.35, hpx * 0.14);
     if (m.dead) {
@@ -1494,14 +1520,18 @@ class Game {
       return;
     }
     ctx.drawImage(cv, cx, cy, wpx, hpx);
-    // 受击闪红
-    if (m.hp < m.maxHp) {
-      const w2 = Math.max(28, wpx);
-      ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(m.x - w2 / 2, cy - 8, w2, 5);
+    // 头顶血条 + 名牌：常显（此前只在受伤后出现），描边保证亮色地形上可读
+    {
+      const w2 = Math.max(40, wpx * 0.6), bx = m.x - w2 / 2, by = cy - 12;
+      ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillRect(bx - 1, by - 1, w2 + 2, 7);
       const col = m.data.tier === 'boss' ? '#e2453f' : m.data.tier === 'elite' ? '#ffae4a' : '#68b0ff';
-      ctx.fillStyle = col; ctx.fillRect(m.x - w2 / 2, cy - 8, w2 * clamp(m.hp / m.maxHp, 0, 1), 5);
+      ctx.fillStyle = col; ctx.fillRect(bx, by, w2 * clamp(m.hp / m.maxHp, 0, 1), 5);
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
+      ctx.strokeRect(bx - 0.5, by - 0.5, w2 + 1, 6);
+      const tag = 'Lv.' + m.lv + ' ' + m.title;
       ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#cfd8e8'; ctx.fillText('Lv.' + m.lv + ' ' + m.title, m.x, cy - 11);
+      ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineWidth = 3; ctx.strokeText(tag, m.x, by - 4);
+      ctx.fillStyle = '#cfd8e8'; ctx.fillText(tag, m.x, by - 4);
       ctx.textAlign = 'left';
     }
     if (m === this.targetMonster) {

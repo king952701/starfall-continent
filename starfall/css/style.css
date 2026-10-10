@@ -66,7 +66,7 @@ body,body *{-ms-touch-action:none;touch-action:none}
   pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-color .15s,box-shadow .15s}
 .bf:hover{border-color:var(--gold);box-shadow:0 0 8px rgba(255,215,106,.45)}
 .bf:active{filter:brightness(1.25)}
-.bf i{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);font-size:9px;text-align:center;color:#bcd;font-style:normal}
+.bf i{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);font-size:10px;text-align:center;color:#bcd;font-style:normal}
 .bf.bad{border-color:#8b3550;box-shadow:0 0 6px rgba(220,60,90,.4)}
 
 #mmwrap{position:absolute;top:12px;right:12px;width:150px;text-align:center}
@@ -86,7 +86,7 @@ body,body *{-ms-touch-action:none;touch-action:none}
   display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.6)}
 .sk canvas{width:36px;height:36px;image-rendering:pixelated}
 .sk .key{position:absolute;top:0;left:2px;font-size:10px;color:var(--gold)}
-.sk .nm{position:absolute;bottom:0;left:0;right:0;font-size:9px;background:rgba(0,0,0,.55);color:#cdd6f5;text-align:center}
+.sk .nm{position:absolute;bottom:0;left:0;right:0;font-size:10px;background:rgba(0,0,0,.55);color:#cdd6f5;text-align:center}
 .sk .cd{position:absolute;inset:0;background:rgba(4,7,16,.78);display:flex;align-items:center;justify-content:center;
   font-size:15px;color:#fff}
 .sk.lock{filter:grayscale(1) brightness(.5)}
@@ -94,6 +94,7 @@ body,body *{-ms-touch-action:none;touch-action:none}
 #hint{font-size:11px;color:#8f9bc4;text-shadow:0 1px 3px #000}
 
 #log{position:absolute;left:12px;bottom:96px;width:330px;font-size:12px;line-height:1.7}
+body.chat-open #log{bottom:246px}   /* 聊天窗打开时日志上移，避免叠在聊天窗下 */
 #log div{color:#c9d2ee;text-shadow:0 1px 2px #000;animation:fadeUp 4s forwards}
 @keyframes fadeUp{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
 
@@ -107,12 +108,14 @@ body,body *{-ms-touch-action:none;touch-action:none}
 #nodePop .npSub{opacity:.85;margin-bottom:3px}
 #nodePop .npRow{white-space:nowrap}
 #nodePop .npFoot{margin-top:3px;opacity:.6;font-size:10px}
-/* 采集进度条：黄色高亮 + 外发光，文字为剩余倒计时 */
-#progWrap{position:absolute;left:50%;top:56%;transform:translateX(-50%);width:300px;height:20px;
-  background:#0a0e1a;border:1px solid #ffd76a;border-radius:4px;text-align:center;
-  box-shadow:0 0 16px rgba(255,215,106,.55),inset 0 0 10px rgba(255,215,106,.18)}
-#progWrap i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#8a6a20,#ffd76a 70%,#fff0b0);width:0%}
-#progWrap span{position:relative;font-size:12px;font-weight:600;color:#ffe9a0;line-height:20px;text-shadow:0 1px 2px #000}
+/* 采集进度条已改为 Canvas 绘制在资源点上方（15_game.js drawGatherBar），原屏幕中央 DOM 黑条已删除 */
+
+/* 全局滚动条：深色面板配系统默认亮灰滚动条非常突兀，统一为暗色细条 */
+*{scrollbar-width:thin;scrollbar-color:#2a3355 transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#2a3355;border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--line)}
+::-webkit-scrollbar-track{background:transparent}
 
 /* ============ 顶部系统功能按钮栏（Feather 图标 · MIT） ============ */
 #menuBar{position:absolute;top:6px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;
@@ -138,7 +141,7 @@ body.mobile #menuBar{display:none}          /* 手机用右下角「菜单」（
 @keyframes tz{0%{opacity:0;transform:scale(.7)}20%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.1) translateY(-20px)}}
 
 /* ============ Tooltip ============ */
-#tooltip{position:absolute;z-index:60;width:288px;padding:8px 10px;background:rgba(9,13,25,.96);
+#tooltip{position:absolute;z-index:75;width:288px;padding:8px 10px;background:rgba(9,13,25,.96);
   border:1px solid var(--line);box-shadow:0 6px 22px rgba(0,0,0,.7);pointer-events:none;font-size:12px;
   opacity:1;transition:opacity .35s ease}
 #tooltip.tipFade{opacity:0}                      /* 定时渐隐（Buff 面板 3 秒后） */
@@ -159,19 +162,21 @@ body.mobile #tooltip.tipNoClose{padding-right:10px}    /* 无「✕ 关闭」按
 /* ============ 面板 ============ */
 #panelRoot{position:absolute;inset:0;z-index:50;pointer-events:none}
 .panel{position:absolute;pointer-events:auto;background:linear-gradient(180deg,#111830,#0a0e1c);
-  border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.75)}
+  border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.75);border-radius:10px}
 .panel:before{content:"";position:absolute;inset:0;border:1px solid rgba(255,215,106,.14);pointer-events:none}
 .ptitle{height:30px;line-height:30px;padding:0 10px;background:linear-gradient(90deg,#1b2545,#141c33);
   color:var(--gold);letter-spacing:2px;font-size:13px;display:flex;justify-content:space-between;align-items:center;cursor:move}
 .ptitle b{font-weight:400;font-size:11px;color:var(--dim)}
 .pclose{cursor:pointer;color:#fff;font-size:13px;font-weight:700;width:20px;height:20px;line-height:19px;
   text-align:center;border-radius:50%;background:#c62a3a;border:1px solid #ff6a6a;box-shadow:0 0 6px rgba(230,60,70,.5);
-  flex:0 0 20px;user-select:none}
+  flex:0 0 20px;user-select:none;box-sizing:content-box;padding:2px}
 .pclose:hover{background:#ff3a4a;box-shadow:0 0 12px rgba(255,80,90,.9)}
+.pclose:active{filter:brightness(1.25)}
 .pbody{padding:8px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain;touch-action:pan-y}
+  overscroll-behavior:contain;touch-action:pan-y;height:calc(100% - 30px);border-radius:0 0 10px 10px}
 .tabs{display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap}
 .tab{padding:3px 10px;border:1px solid var(--line);background:#0d1226;color:var(--dim);cursor:pointer;font-size:12px}
+.tab:hover{border-color:var(--gold2);color:var(--txt)}
 .tab.on{background:#24305a;color:var(--gold);border-color:var(--gold)}
 .grid{display:grid;grid-template-columns:repeat(10,44px);gap:4px}
 .cell{position:relative;width:44px;height:44px;border:1px solid #2a3355;background:#0c1120;cursor:pointer}
@@ -187,6 +192,7 @@ body.mobile #tooltip.tipNoClose{padding-right:10px}    /* 无「✕ 关闭」按
 .btn:hover{background:#24305a;color:var(--gold)}
 .btn.gold{border-color:var(--gold);color:var(--gold)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:active{transform:translateY(1px);filter:brightness(1.15)}
 select,input{background:#0c1120;border:1px solid var(--line);color:var(--txt);padding:3px 6px;font-size:12px;font-family:inherit}
 .rlist{max-height:150px;overflow:auto;border:1px solid #2a3355;background:#090d19}
 .ritem{padding:5px 8px;border-bottom:1px solid #1a2138;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;gap:6px}
@@ -325,7 +331,7 @@ canvas.ic{image-rendering:pixelated}
   padding:10px 2px 7px;border-radius:10px;cursor:pointer;background:rgba(6,18,44,.55);
   border:1px solid rgba(120,180,255,.28);transition:border-color .15s,box-shadow .15s,transform .15s;
   -webkit-tap-highlight-color:transparent;user-select:none}
-.smi svg{width:20px;height:20px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.smi svg{width:18px;height:18px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .smi b{font-size:11px;font-weight:400;color:#cfe0ff;letter-spacing:1px}
 .smi:hover{border-color:rgba(160,215,255,.8);box-shadow:0 0 12px rgba(100,180,255,.45);transform:translateY(-2px)}
 .smi:active{transform:translateY(0)}
@@ -467,9 +473,8 @@ body.mobile #topbar{top:8px;left:8px;transform:scale(.78);transform-origin:top l
 body.mobile #bottom{bottom:8px}
 body.mobile #skillbar{gap:4px}
 body.mobile #chatWrap{left:8px;bottom:104px;width:min(34vw,300px);max-width:34vw}
-body.mobile #progWrap{bottom:120px}
 body.mobile.portrait #chatWrap{width:min(64vw,340px);max-width:64vw}
-body.mobile .pbody{font-size:12px}
+body.mobile .pbody{font-size:12px;height:calc(100% - 34px)}
 body.mobile .grid{grid-template-columns:repeat(8,40px) !important}
 body.mobile .eqgrid{grid-template-columns:repeat(3,40px) !important}   /* 角色装备栏：3×3，不被背包的 8 列规则覆盖 */
 body.mobile .cell{width:40px;height:40px}                 /* 触摸目标 ≥40px */
@@ -594,7 +599,7 @@ body.mobile .mMenu{display:block}
 .mMenuBtn{padding:8px 10px;min-width:56px;text-align:center;border:1px solid var(--line);
   background:#111830;color:#cfe8b8;font-size:12px;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:3px}
-.mMenuBtn svg{width:16px;height:16px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mMenuBtn svg{width:18px;height:18px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .mMenuBtn.hit{background:#24305a;color:var(--gold)}
 .mMenuToggle{position:absolute;right:0;bottom:0;width:44px;height:44px;line-height:44px;text-align:center;
   border-radius:50%;background:linear-gradient(180deg,#1d2748,#0d1226);border:1px solid var(--gold);
