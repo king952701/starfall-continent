@@ -1,0 +1,16 @@
+星落大陆（Starlit Continent）地表瓦片
+Terrain tiles for "Starlit Continent"
+
+本目录下全部 39 张瓦片（grass / sand / snow / stone / water）由本项目的
+脚本程序化绘制生成，为本项目原创素材，不来自任何第三方素材包，
+可随本项目自由使用与修改。
+
+All 39 tiles in this folder are generated programmatically by this
+project's own tooling. They are original artwork and are NOT taken
+from any third-party asset pack. Free to use and modify with this
+project.
+
+注：assets/boat/（小船）来自 Kenney Pirate Pack，
+    许可见同目录 LICENSE-Kenney.txt（CC0 1.0 公共领域）。
+Note: assets/boat/ (dinghy) is from Kenney Pirate Pack,
+      see LICENSE-Kenney.txt in that folder (CC0 1.0, public domain).

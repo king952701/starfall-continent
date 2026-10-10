@@ -592,9 +592,9 @@ const UI = {
   /* ---------- 第三方资源致谢页（中英双语 / 可点击跳转） ---------- */
   creditList: [
     {
-      name: 'Kenney 游戏美术素材（地表瓦片）', en: 'Kenney Game Assets (terrain tiles)',
-      by: 'Kenney（www.kenney.nl）', lic: 'CC0 1.0 公共领域 / Public Domain',
-      url: 'https://kenney.nl/assets', note: '地形瓦片经按区域重新染色后使用'
+      name: '地表瓦片（原创·本项目生成）', en: 'Terrain tiles (original, generated)',
+      by: '星落大陆项目', lic: '原创 / Original',
+      url: '', note: '39 张瓦片由本项目的脚本程序化绘制生成，非第三方素材'
     },
     {
       name: 'Kenney 海盗素材包（水域小船）', en: 'Kenney Pirate Pack (dinghy sprites)',

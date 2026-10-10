@@ -8,7 +8,7 @@ project:
 
 paths:
   code_root: starfall/src          # 28 个 JS，全局作用域，按 index.html 顺序引入
-  asset_root: starfall/assets      # tiles/（CC0 Kenney）+ boat/（CC0 Kenney）
+  asset_root: starfall/assets      # tiles/（原创生成）+ boat/（CC0 Kenney）
   style: starfall/css/style.css
   entry: starfall/index.html
   mobile: starfall-mobile          # Cordova 工程；docs/ 只在这里，不进 www
