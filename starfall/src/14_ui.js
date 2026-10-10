@@ -66,6 +66,8 @@ const UI = {
           dir: 'y', key: 'chat.main', a: msgs, b: row,
           min1: 90, max1: 640, min2: 34, def: 0.80
         });
+        /* 分栏默认内联 min-height:0 会把 auto 高度的聊天窗算塌，给消息/输入区一个兜底高 */
+        if (cw._spChat && cw._spChat.wrap) cw._spChat.wrap.style.minHeight = '168px';
       }
     }
     $('hud').classList.remove('hide');
@@ -105,7 +107,8 @@ const UI = {
     nav: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
-    rank: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'
+    rank: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+    horn: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'
   },
   iconSvg(key) {
     const d = this.ICONS[key];
@@ -158,6 +161,8 @@ const UI = {
     mk('nav', '导航', () => this.toggleOverview());
     mk('settings', '设置', () => { if (typeof Settings !== 'undefined') Settings.open(); });
     mk('save', '存档', () => { if (this.game) this.game.save(true); this.toast('已存档', '#ffd76a'); });
+    /* 聊天窗：独立功能按钮（喇叭图标），点击弹出 / 收起可移动可拉伸的聊天窗 */
+    this.chatBtnEl = mk('horn', '聊天', () => this.toggleChatWin());
     /* 点击别处关闭生活菜单 */
     if (!this._lifeClose) {
       this._lifeClose = true;
@@ -1077,7 +1082,7 @@ const UI = {
           if (e.shiftKey) {                      // Shift+左键：直接发送到聊天窗
             const ch = this.chatCh || '世界';
             if (it.type === 'gear') Chat.sayGear(p.name, ch, it, ''); else Chat.sayItem(p.name, ch, it, '');
-            const w = $('chatWrap'); if (w) w.classList.remove('fold');
+            this.setChatWin(true);
             this.toast('已发送到频道：' + itemFullLabel(it), '#9fe8ff');
             return;
           }
@@ -2111,6 +2116,14 @@ const UI = {
     /* 独立容器：标题栏按住可拖拽移动，位置记忆 */
     this.makeChatDraggable();
     this.restoreChatPos();
+    /* 八向自由拉伸：边 7px / 角 14px，任意方向缩放，clamp 240×150 ~ 视口 90% */
+    this.makeChatResizable();
+    this.restoreChatSize();
+    /* 显隐：默认收起，由菜单栏「聊天」喇叭按钮开关（触屏设备保持常开，手机无菜单栏按钮） */
+    let open0 = null;
+    try { open0 = localStorage.getItem('sf.chat.win'); } catch (e) { /* 忽略 */ }
+    if (open0 === null) open0 = (navigator.maxTouchPoints > 0) ? '1' : '0';
+    this.setChatWin(open0 === '1');
     Chat.onChange = () => this.renderChat();
     Chat.system('欢迎来到星落大陆！按 Enter 发言；装备面板可「发送链接」分享战力。');
     Chat.push({ who: '系统', ch: '世界', text: '欢迎来到星落大陆！点击上方标签可切换 世界/中文/English/交易/队伍/公会/私聊/好友/系统 频道。', sys: true });
@@ -2164,9 +2177,86 @@ const UI = {
       }
     } catch (e) { /* 忽略 */ }
   },
+  /** 聊天窗显隐：菜单栏「聊天」喇叭按钮开关，状态记忆 */
+  toggleChatWin() {
+    const w = $('chatWrap');
+    this.setChatWin(w ? w.classList.contains('hide') : false);
+  },
+  setChatWin(open) {
+    const w = $('chatWrap');
+    if (!w) return;
+    w.classList.toggle('hide', !open);
+    if (open) w.classList.remove('fold');
+    if (this.chatBtnEl) this.chatBtnEl.classList.toggle('on', open);
+    try { localStorage.setItem('sf.chat.win', open ? '1' : '0'); } catch (e) { /* 忽略 */ }
+  },
+  /** 聊天窗八向拉伸：n/s/e/w/ne/nw/se/sw，Pointer Events（鼠标 / 触摸通用）。
+   *  clamp：最小 240×150，最大视口 90%；西 / 北方向拉伸时同步平移窗口，位置不跳。 */
+  makeChatResizable() {
+    const w = $('chatWrap');
+    if (!w || w._rszChat) return;
+    w._rszChat = true;
+    const MIN_W = 240, MIN_H = 150;
+    const maxW = () => Math.max(MIN_W, Math.round(window.innerWidth * 0.9));
+    const maxH = () => Math.max(MIN_H, Math.round(window.innerHeight * 0.9));
+    ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].forEach(dir => {
+      const h = document.createElement('i');
+      h.className = 'rsz rsz-' + dir;
+      h.title = '拖拽调整大小';
+      h.addEventListener('pointerdown', e => {
+        if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+        e.preventDefault(); e.stopPropagation();
+        const r = w.getBoundingClientRect();
+        const sx = e.clientX, sy = e.clientY;
+        const move = ev => {
+          const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          let left = r.left, top = r.top, wd = r.width, ht = r.height;
+          if (dir.indexOf('e') >= 0) wd = r.width + dx;
+          if (dir.indexOf('s') >= 0) ht = r.height + dy;
+          if (dir.indexOf('w') >= 0) wd = r.width - dx;
+          if (dir.indexOf('n') >= 0) ht = r.height - dy;
+          wd = clamp(Math.round(wd), MIN_W, maxW());
+          ht = clamp(Math.round(ht), MIN_H, maxH());
+          if (dir.indexOf('w') >= 0) left = r.left + (r.width - wd);   // 用 clamp 后的宽度反推，min 不卡死
+          if (dir.indexOf('n') >= 0) top = r.top + (r.height - ht);
+          w.style.width = wd + 'px';
+          w.style.height = ht + 'px';
+          w.style.left = clamp(Math.round(left), 4, Math.max(4, window.innerWidth - wd - 4)) + 'px';
+          w.style.top = clamp(Math.round(top), 4, Math.max(4, window.innerHeight - ht - 4)) + 'px';
+          w.style.right = 'auto'; w.style.bottom = 'auto';
+          w.style.maxWidth = 'none';
+        };
+        const up = () => {
+          window.removeEventListener('pointermove', move, true);
+          window.removeEventListener('pointerup', up, true);
+          window.removeEventListener('pointercancel', up, true);
+          try { localStorage.setItem('sf.chat.size', JSON.stringify({ w: w.style.width, h: w.style.height })); } catch (e2) { /* 忽略 */ }
+        };
+        window.addEventListener('pointermove', move, true);
+        window.addEventListener('pointerup', up, true);
+        window.addEventListener('pointercancel', up, true);
+      });
+      w.appendChild(h);
+    });
+  },
+  /** 恢复上次拉伸的尺寸（超视口时按 90% 收敛） */
+  restoreChatSize() {
+    const w = $('chatWrap'); if (!w) return;
+    try {
+      const d = JSON.parse(localStorage.getItem('sf.chat.size') || 'null');
+      if (!d) return;
+      const wd = parseFloat(d.w), ht = parseFloat(d.h);
+      if (isFinite(wd) && isFinite(ht) && wd >= 200 && ht >= 120) {
+        w.style.width = Math.min(wd, Math.round(window.innerWidth * 0.9)) + 'px';
+        w.style.height = Math.min(ht, Math.round(window.innerHeight * 0.9)) + 'px';
+        w.style.maxWidth = 'none';
+      }
+    } catch (e) { /* 忽略 */ }
+  },
   focusChat() {
     if (!this.elChatInput) return;
     const w = $('chatWrap'); if (w) w.classList.remove('fold');
+    this.setChatWin(true);
     this.elChatInput.focus();
   },
   sendChat() {
@@ -2342,7 +2432,7 @@ const UI = {
       const ch = this.chatCh || '世界';
       if (isGear) Chat.sayGear(p.name, ch, inst, '');
       else Chat.sayItem(p.name, ch, inst, '');
-      const w = $('chatWrap'); if (w) w.classList.remove('fold');
+      this.setChatWin(true);
       this.toast('物品信息已发送到频道', '#9fe8ff');
     };
     ops.appendChild(bLink);
