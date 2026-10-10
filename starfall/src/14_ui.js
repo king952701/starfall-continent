@@ -56,6 +56,7 @@ const UI = {
     this.elToast = $('toastWrap');
     this.buildSkillBar();
     this.buildMenuBar();
+    this.buildSysMenu();
     this.buildChat();
     /* 聊天窗：消息区 / 输入区 上下可拖拽（静态 DOM，初始化时挂一次） */
     if (typeof Splitter !== 'undefined') {
@@ -108,7 +109,10 @@ const UI = {
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
     rank: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
-    horn: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'
+    horn: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+    menu: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+    mount: '<path d="M5 21c-1-5 0-8 3-11l-1-5 4 2 3-4 2 4c3 1 4 5 2 9l-2 5"/><path d="M9.5 12h.01"/>',
+    pet: '<circle cx="7.5" cy="8.5" r="1.8"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="16.5" cy="8.5" r="1.8"/><path d="M8 15c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.2-1.8 4-4 4s-4-1.8-4-4z"/>'
   },
   iconSvg(key) {
     const d = this.ICONS[key];
@@ -125,6 +129,8 @@ const UI = {
       bar.appendChild(b);
       return b;
     };
+    /* 系统菜单入口：点击弹出一站式星空功能面板（第一格） */
+    this.menuBtnEl = mk('menu', '菜单', () => this.toggleSysMenu());
     mk('bag', '背包', () => this.toggle('bag', () => this.openBag()));
     mk('user', '角色', () => this.toggle('char', () => this.openChar()));
     mk('tool', '制作', () => this.toggle('craft', () => this.openCraft()));
@@ -243,6 +249,79 @@ const UI = {
       const l = parseFloat(d.l), tp = parseFloat(d.t);
       if (isFinite(l) && isFinite(tp)) this.placeMenuBar(l, tp);
     } catch (e) { /* 忽略 */ }
+  },
+
+  /* ================= 系统菜单：天蓝星空科幻风 4×4 一站式面板 ================= */
+  /* [图标, 标签, 动作]；4 列网格，最后一行 2 格 */
+  SYS_ITEMS: [
+    ['bag', '背包', 'bag'], ['user', '角色', 'char'], ['tool', '制作', 'craft'], ['talent', '天赋', 'talent'],
+    ['life', '生活', 'skills'], ['idle', '挂机', 'idle'], ['map', '地图', 'map'], ['nav', '导航', 'ov'],
+    ['market', '拍卖', 'market'], ['mount', '坐骑', 'mount'], ['pet', '宠物', 'pet'], ['codex', '图鉴', 'codex'],
+    ['settings', '设置', 'settings'], ['save', '存档', 'save']
+  ],
+  /** 构建系统菜单面板（静态，一次构建） */
+  buildSysMenu() {
+    const m = $('sysMenu');
+    if (!m || m._built) return;
+    m._built = true;
+    m.innerHTML = '';
+    const head = el('div', 'sysHead', '<span>系统菜单 · SYSTEM</span>');
+    const close = el('div', 'sysClose', '×');
+    close.title = '关闭';
+    close.onclick = e => { e.stopPropagation(); this.toggleSysMenu(); };
+    head.appendChild(close);
+    m.appendChild(head);
+    this.SYS_ITEMS.forEach(([icon, label, act]) => {
+      const d = el('div', 'smi');
+      d.innerHTML = this.iconSvg(icon) + '<b>' + label + '</b>';
+      d.title = label;
+      d.onclick = e => {
+        e.stopPropagation();
+        this.toggleSysMenu();                       // 先收起面板再执行功能
+        this.runSysAction(act, label);
+      };
+      m.appendChild(d);
+    });
+    if (!this._sysClose) {
+      this._sysClose = true;
+      window.addEventListener('mousedown', e => {
+        const mm = $('sysMenu');
+        if (mm && !mm.classList.contains('hide') && !mm.contains(e.target) &&
+          !(this.menuBtnEl && this.menuBtnEl.contains(e.target))) this.toggleSysMenu();
+      });
+    }
+  },
+  /** 开 / 关系统菜单（按钮高亮同步） */
+  toggleSysMenu() {
+    const m = $('sysMenu');
+    if (!m) return;
+    const open = m.classList.contains('hide');
+    m.classList.toggle('hide', !open);
+    if (this.menuBtnEl) this.menuBtnEl.classList.toggle('on', open);
+    if (open) {                                       // 打开时关闭生活菜单，避免叠加
+      const life = $('lifeMenu');
+      if (life) life.classList.add('hide');
+    }
+  },
+  /** 系统菜单动作分发（坐骑 / 宠物为预留位） */
+  runSysAction(act, label) {
+    switch (act) {
+      case 'bag': this.toggle('bag', () => this.openBag()); break;
+      case 'char': this.toggle('char', () => this.openChar()); break;
+      case 'craft': this.toggle('craft', () => this.openCraft()); break;
+      case 'talent': this.toggle('talent', () => this.openTalent()); break;
+      case 'skills': this.toggle('skills', () => this.openSkills()); break;
+      case 'idle': this.toggle('idle', () => this.openIdle()); break;
+      case 'map': this.toggle('map', () => this.openMap()); break;
+      case 'ov': this.toggleOverview(); break;
+      case 'market': this.toggle('market', () => this.openMarket()); break;
+      case 'mount': this.toast('坐骑系统开发中，敬请期待', '#9fe8ff'); break;
+      case 'pet': this.toast('宠物系统开发中，敬请期待', '#9fe8ff'); break;
+      case 'codex': this.toggle('codex', () => this.openCodex()); break;
+      case 'settings': if (typeof Settings !== 'undefined') Settings.open(); break;
+      case 'save': if (this.game) this.game.save(true); this.toast('已存档', '#ffd76a'); break;
+      default: this.toast(label + '：功能开发中', '#9fe8ff');
+    }
   },
 
   buildSkillBar() {
