@@ -85,10 +85,31 @@ body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
 #nodePop .npSub{opacity:.85;margin-bottom:3px}
 #nodePop .npRow{white-space:nowrap}
 #nodePop .npFoot{margin-top:3px;opacity:.6;font-size:10px}
-#progWrap{position:absolute;left:50%;top:56%;transform:translateX(-50%);width:280px;height:16px;
-  background:#0a0e1a;border:1px solid var(--gold);text-align:center}
-#progWrap i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#8a6a20,var(--xp));width:0%}
-#progWrap span{position:relative;font-size:11px;color:#fff;line-height:16px}
+/* 采集进度条：黄色高亮 + 外发光，文字为剩余倒计时 */
+#progWrap{position:absolute;left:50%;top:56%;transform:translateX(-50%);width:300px;height:20px;
+  background:#0a0e1a;border:1px solid #ffd76a;border-radius:4px;text-align:center;
+  box-shadow:0 0 16px rgba(255,215,106,.55),inset 0 0 10px rgba(255,215,106,.18)}
+#progWrap i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#8a6a20,#ffd76a 70%,#fff0b0);width:0%}
+#progWrap span{position:relative;font-size:12px;font-weight:600;color:#ffe9a0;line-height:20px;text-shadow:0 1px 2px #000}
+
+/* ============ 顶部系统功能按钮栏（Feather 图标 · MIT） ============ */
+#menuBar{position:absolute;top:6px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;
+  justify-content:center;gap:4px;z-index:22;max-width:min(62vw,640px)}
+.mBtnI{display:flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:44px;
+  border-radius:9px;background:rgba(10,14,26,.85);border:1px solid #2a3355;color:#cfe0ff;cursor:pointer;
+  user-select:none;pointer-events:auto}
+.mBtnI svg{width:18px;height:18px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mBtnI b{font-size:10px;font-weight:400;color:#9fb0dd;margin-top:2px;letter-spacing:1px}
+.mBtnI:hover{border-color:#ffd76a;box-shadow:0 0 10px rgba(255,215,106,.4)}
+.mBtnI.on{border-color:#ffd76a;background:rgba(255,215,106,.12)}
+body.mobile #menuBar{display:none}          /* 手机用右下角「菜单」（同样带图标） */
+
+/* 生活菜单（挂在按钮栏下方）：聚合采集挂机 / 生活技能 / 排行 / 成就 */
+#lifeMenu{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:23;display:flex;
+  flex-direction:column;gap:4px;padding:8px;background:rgba(9,13,25,.96);border:1px solid #2a3355;
+  border-radius:10px;box-shadow:0 8px 26px rgba(0,0,0,.7)}
+#lifeMenu .mBtnI{flex-direction:row;width:auto;height:34px;padding:0 14px;gap:8px}
+#lifeMenu .mBtnI b{margin-top:0;font-size:12px}
 
 #toastWrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
 .toast{font-size:20px;color:var(--gold);text-shadow:0 2px 8px #000,0 0 20px rgba(255,215,106,.5);animation:tz 1.6s forwards}
@@ -492,7 +513,9 @@ body.mobile .mMenu{display:block}
   border:1px solid var(--line);border-radius:6px}
 .mMenuList.open{display:flex}
 .mMenuBtn{padding:8px 10px;min-width:56px;text-align:center;border:1px solid var(--line);
-  background:#111830;color:#cfe8b8;font-size:12px;cursor:pointer}
+  background:#111830;color:#cfe8b8;font-size:12px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:3px}
+.mMenuBtn svg{width:16px;height:16px;stroke:#ffd76a;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .mMenuBtn.hit{background:#24305a;color:var(--gold)}
 .mMenuToggle{position:absolute;right:0;bottom:0;width:44px;height:44px;line-height:44px;text-align:center;
   border-radius:50%;background:linear-gradient(180deg,#1d2748,#0d1226);border:1px solid var(--gold);

@@ -55,6 +55,7 @@ const UI = {
     this.elLog = $('log'); this.elTip = $('tooltip'); this.elRoot = $('panelRoot');
     this.elToast = $('toastWrap');
     this.buildSkillBar();
+    this.buildMenuBar();
     this.buildChat();
     /* 聊天窗：消息区 / 输入区 上下可拖拽（静态 DOM，初始化时挂一次） */
     if (typeof Splitter !== 'undefined') {
@@ -87,6 +88,89 @@ const UI = {
   },
 
   /* ---------- HUD ---------- */
+  /* ---------- 系统功能按钮栏（开源图标：Feather Icons，MIT 许可） ----------
+   * 全部功能入口集中在这里；「生活」聚合采集挂机 / 生活技能 / 排行榜 / 成就。
+   * 手机端隐藏此栏（右下角「菜单」用同一套图标），避免遮挡摇杆。 */
+  ICONS: {
+    bag: '<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    tool: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    talent: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+    life: '<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/>',
+    idle: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    map: '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
+    ach: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+    codex: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    market: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
+    nav: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+    rank: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'
+  },
+  iconSvg(key) {
+    const d = this.ICONS[key];
+    return d ? '<svg viewBox="0 0 24 24">' + d + '</svg>' : '';
+  },
+  buildMenuBar() {
+    const bar = $('menuBar'); if (!bar) return;
+    bar.innerHTML = '';
+    const mk = (icon, label, fn) => {
+      const b = el('div', 'mBtnI');
+      b.innerHTML = this.iconSvg(icon) + '<b>' + label + '</b>';
+      b.title = label;
+      b.onclick = e => { e.stopPropagation(); fn(b); };
+      bar.appendChild(b);
+      return b;
+    };
+    mk('bag', '背包', () => this.toggle('bag', () => this.openBag()));
+    mk('user', '角色', () => this.toggle('char', () => this.openChar()));
+    mk('tool', '制作', () => this.toggle('craft', () => this.openCraft()));
+    mk('talent', '天赋', () => this.toggle('talent', () => this.openTalent()));
+    /* 生活菜单：采集挂机 / 生活技能 / 排行榜 / 成就 归集于此 */
+    const lifeBtn = mk('life', '生活', () => {
+      const m = $('lifeMenu');
+      if (!m) return;
+      const open = m.classList.contains('hide');
+      m.classList.toggle('hide', !open);
+      lifeBtn.classList.toggle('on', open);
+      if (!open) return;
+      m.innerHTML = '';
+      const item = (icon, label, fn) => {
+        const b = el('div', 'mBtnI');
+        b.innerHTML = this.iconSvg(icon) + '<b>' + label + '</b>';
+        b.onclick = e => {
+          e.stopPropagation();
+          m.classList.add('hide'); lifeBtn.classList.remove('on');
+          fn();
+        };
+        m.appendChild(b);
+      };
+      item('idle', '采集挂机', () => this.toggle('idle', () => this.openIdle()));
+      item('life', '生活技能', () => this.toggle('skills', () => this.openSkills()));
+      item('rank', '排行榜', () => this.toggle('rank', () => this.openRank()));
+      item('ach', '成就', () => this.toggle('ach', () => this.openAch()));
+    });
+    mk('idle', '挂机', () => this.toggle('idle', () => this.openIdle()));   // 采集挂机：独立按钮
+    mk('map', '地图', () => this.toggle('map', () => this.openMap()));
+    mk('codex', '图鉴', () => this.toggle('codex', () => this.openCodex()));
+    mk('market', '拍卖', () => this.toggle('market', () => this.openMarket()));
+    mk('nav', '导航', () => this.toggleOverview());
+    mk('settings', '设置', () => { if (typeof Settings !== 'undefined') Settings.open(); });
+    mk('save', '存档', () => { if (this.game) this.game.save(true); this.toast('已存档', '#ffd76a'); });
+    /* 点击别处关闭生活菜单 */
+    if (!this._lifeClose) {
+      this._lifeClose = true;
+      window.addEventListener('mousedown', e => {
+        const m = $('lifeMenu');
+        if (m && !m.classList.contains('hide') && !m.contains(e.target)) {
+          m.classList.add('hide');
+          const lb = document.querySelector('#menuBar .mBtnI');
+          if (lb) document.querySelectorAll('#menuBar .mBtnI').forEach(x => { if (x.textContent.indexOf('生活') >= 0) x.classList.remove('on'); });
+        }
+      });
+    }
+  },
+
   buildSkillBar() {
     const bar = $('skillbar'); bar.innerHTML = '';
     this.skillEls = [];
@@ -591,6 +675,11 @@ const UI = {
 
   /* ---------- 第三方资源致谢页（中英双语 / 可点击跳转） ---------- */
   creditList: [
+    {
+      name: 'Feather 图标（界面功能按钮）', en: 'Feather Icons (menu buttons)',
+      by: 'Feather Contributors（feathericons.com）', lic: 'MIT 许可 / MIT License',
+      url: 'https://feathericons.com/', note: '顶部功能按钮栏与手机端菜单的小图标'
+    },
     {
       name: '地表瓦片（原创·本项目生成）', en: 'Terrain tiles (original, generated)',
       by: '星落大陆项目', lic: '原创 / Original',

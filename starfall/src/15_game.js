@@ -387,9 +387,9 @@ class Game {
     const bt = this.nearbyBoat();
     if (bt) return this.boardBoat(bt);
     const tx = Math.floor(p.x / TILE_PX), ty = Math.floor(p.y / TILE_PX);
-    // 优先采集点：打开资源点采集面板
+    // 优先采集点：E = 直接开始采集（进度条见屏幕中下方）；左键点击资源点才是面板
     const nd = this.world.nearestNode(tx, ty, 2.6);
-    if (nd) { UI.openNode(nd.node); return; }
+    if (nd) { this.startGather(nd); return; }
     const objs = this.world.objectsNear(tx, ty, 2)
       .filter(o => ['chest', 'bench', 'portal', 'npc'].includes(o.o.kind))
       .sort((a, b) => dist(a.tx, a.ty, tx, ty) - dist(b.tx, b.ty, tx, ty));
@@ -687,7 +687,7 @@ class Game {
       const bt = this.nearbyBoat();
       if (bt) { this.interactHint = 'E 上船'; this.updateNodePop(); return; }
       const nd = this.world.nearestNode(tx, ty, 2.6);
-      if (nd) txt = '左键/E 打开 ' + this.nodeName(nd.node) + ' 采集面板';
+      if (nd) txt = 'E 直接采集 ' + this.nodeName(nd.node) + '（10s）｜ 左键 打开采集面板';
       else {
         const objs = this.world.objectsNear(tx, ty, 2).sort((a, b) => dist(a.tx, a.ty, tx, ty) - dist(b.tx, b.ty, tx, ty));
         const o = objs.find(x => ['chest', 'bench', 'portal', 'npc'].includes(x.o.kind));
@@ -723,16 +723,16 @@ class Game {
     const p = this.player, toolId = TOOL_OF[skill];
     return p.countItem(toolId) > 0 || p.countItem({ mine: 5002, log: 5012, herb: 5022, fish: 5032 }[skill] || 0) > 0;
   }
-  /** 单次采集耗时（秒） */
+  /** 单次采集耗时（秒）：所有资源点统一基础 10 秒；工具 / 天赋 / 等级仍可缩短，下限 2 秒 */
   gatherTime(nd) {
     const p = this.player, skill = nd.skill;
     const toolId = TOOL_OF[skill];
     const hasTool = this.hasTool(skill);
     const toolDef = ITEMS[toolId];
-    const base = { mine: 3.0, log: 2.2, herb: 2.0, bug: 2.5, fish: 6.0 }[skill];
+    const base = 10;
     const life = p.life[skill];
     const own = (p.stats.gatherSpeed || 0) + (({ mine: 11, log: 12, herb: 13, fish: 14 }[skill]) ? p.talentLevel({ mine: 11, log: 12, herb: 13, fish: 14 }[skill]) * 5 : 0) + (p.stats.fishSpeed || 0);
-    return Math.max(0.6, base / (1 + life.lv * 0.01 + (hasTool ? toolDef.toolSpeed * 0.4 : 0) + own / 100));
+    return Math.max(2, base / (1 + life.lv * 0.01 + (hasTool ? toolDef.toolSpeed * 0.4 : 0) + own / 100));
   }
   /** 渔点可产出的鱼名单 */
   fishPool(nd) {
@@ -790,7 +790,9 @@ class Game {
     if (dd > 3.2 * TILE_PX) { this.gather = null; $('progWrap').classList.add('hide'); return; }
     g.t += dt;
     $('progFill').style.width = clamp(g.t / g.total * 100, 0, 100) + '%';
-    $('progTxt').textContent = ({ mine: '采矿中', log: '伐木中', herb: '采药中', bug: '捕虫中', fish: '钓鱼中' })[g.skill] + ' ' + (g.t / g.total * 100).toFixed(0) + '%';
+    /* 黄色高亮进度条：显示剩余倒计时（秒） */
+    $('progTxt').textContent = ({ mine: '采矿中', log: '伐木中', herb: '采药中', bug: '捕虫中', fish: '钓鱼中' })[g.skill]
+      + '　剩余 ' + Math.max(0, g.total - g.t).toFixed(1) + 's';
     if (g.t < g.total) return;
     $('progWrap').classList.add('hide');
     this.gather = null;

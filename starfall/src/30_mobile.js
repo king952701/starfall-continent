@@ -132,7 +132,8 @@ const Mobile = {
     };
     addMid('采集', 'mid', () => {
       const nd = this.nearestNode(3.6);
-      if (nd) UI.openNode(nd); else UI.toast('附近没有资源点', '#ff9a9a');
+      if (nd) g.startGather(nd);            // 与桌面端 E 键一致：直接开始采集（10s 进度条）
+      else UI.toast('附近没有资源点', '#ff9a9a');
     });
     addMid('交互', 'mid', () => g.tryInteract());
     hud.appendChild(mid);
@@ -186,8 +187,15 @@ const Mobile = {
       ['存档', () => { this.game.save(true); UI.toast('已存档', '#ffd76a'); }]
     ];
     const list = el('div', 'mMenuList');
+    /* 菜单按钮带图标（与桌面端按钮栏同一套 Feather 图标） */
+    const ICON_OF = {
+      '背包': 'bag', '角色': 'user', '制作': 'tool', '天赋': 'talent', '技能': 'life',
+      '地图': 'map', '成就': 'ach', '图鉴': 'codex', '排行': 'rank', '挂机': 'idle',
+      '拍卖': 'market', '导航': 'nav', '频道': 'nav', '设置': 'settings', '存档': 'save'
+    };
     items.forEach(it => {
-      const b = el('div', 'mMenuBtn', it[0]);
+      const b = el('div', 'mMenuBtn');
+      b.innerHTML = ((typeof UI !== 'undefined' && UI.iconSvg && ICON_OF[it[0]]) ? UI.iconSvg(ICON_OF[it[0]]) : '') + '<span>' + it[0] + '</span>';
       b.addEventListener('touchstart', e => {
         e.preventDefault(); e.stopPropagation();
         b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 130);
