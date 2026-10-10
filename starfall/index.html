@@ -58,11 +58,12 @@
   <div id="log"></div>
 
   <!-- 世界频道：发言 / 装备信息链接 / 装备对比 -->
+  <!-- 聊天容器：独立浮窗，标题栏可拖拽移动；九个频道标签页各自独立 -->
   <div id="chatWrap">
-    <div id="chatHead"><span>世界频道</span><span id="chatToggle">—</span></div>
+    <div id="chatHead" title="按住拖动可移动窗口"><span id="chatTitle">世界频道</span><span id="chatToggle">—</span></div>
+    <div id="chatTabs"></div>
     <div id="chatMsgs"></div>
     <div id="chatRow">
-      <select id="chatCh"><option>世界</option><option>附近</option></select>
       <input id="chatInput" maxlength="70" placeholder="按 Enter 发言，装备可发链接">
       <button class="btn" id="chatSend">发送</button>
     </div>

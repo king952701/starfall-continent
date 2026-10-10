@@ -266,9 +266,17 @@ canvas.ic{image-rendering:pixelated}
   background:rgba(8,12,24,.82);border:1px solid var(--line);border-radius:4px;backdrop-filter:blur(3px)}
 #chatWrap input,#chatWrap select,#chatWrap button{pointer-events:auto}
 #chatHead{display:flex;justify-content:space-between;align-items:center;padding:2px 6px;
-  color:var(--gold);font-size:12px;letter-spacing:1px;cursor:pointer;background:rgba(255,215,106,.08)}
+  color:var(--gold);font-size:12px;letter-spacing:1px;cursor:move;background:rgba(255,215,106,.08)}
 #chatMsgs{height:132px;overflow-y:auto;padding:4px 6px;font-size:12px;line-height:1.45}
-#chatWrap.fold #chatMsgs,#chatWrap.fold #chatRow{display:none}
+#chatWrap.fold #chatTabs,#chatWrap.fold #chatMsgs,#chatWrap.fold #chatRow{display:none}
+/* 频道标签页：九频道各自独立，横向可滚动（窄窗 / 手机不会挤成多行） */
+#chatTabs{display:flex;flex-wrap:nowrap;gap:3px;padding:3px 4px;overflow-x:auto;overscroll-behavior-x:contain;
+  border-bottom:1px solid var(--line);background:rgba(255,215,106,.05);scrollbar-width:thin}
+.ctab{flex:0 0 auto;padding:1px 7px;font-size:11px;color:var(--dim);border:1px solid var(--line);
+  background:#0c1224;cursor:pointer;border-radius:3px;pointer-events:auto;white-space:nowrap;user-select:none}
+.ctab:hover{color:var(--txt);border-color:var(--gold2)}
+.ctab.on{color:var(--gold);border-color:var(--gold);background:#24305a}
+.ctab.has::after{content:'•';color:#ff5a5a;margin-left:3px;font-weight:700}   /* 未读红点 */
 .cmsg{padding:1px 0;word-break:break-all}
 .cmsg .cwho{color:#6fa8ff}
 .cmsg.self .cwho{color:#7fdba4}
@@ -276,7 +284,6 @@ canvas.ic{image-rendering:pixelated}
 .cLink{cursor:pointer;text-decoration:underline dotted;font-weight:600}
 .cLink:hover{background:rgba(255,215,106,.16)}
 #chatRow{display:flex;gap:4px;padding:3px 4px;border-top:1px solid var(--line)}
-#chatRow select{width:62px;background:#0c1224;color:#cfe8b8;border:1px solid var(--line);font-size:12px}
 #chatInput{flex:1;background:#0c1224;border:1px solid var(--line);color:#e6ecf7;font-size:12px;padding:2px 4px}
 #chatSend{padding:2px 8px;font-size:12px}
 

@@ -1006,7 +1006,7 @@ const UI = {
           const it = p.bag[idx];
           if (!it) return;
           if (e.shiftKey) {                      // Shift+左键：直接发送到聊天窗
-            const ch = $('chatCh') ? $('chatCh').value : '世界';
+            const ch = this.chatCh || '世界';
             if (it.type === 'gear') Chat.sayGear(p.name, ch, it, ''); else Chat.sayItem(p.name, ch, it, '');
             const w = $('chatWrap'); if (w) w.classList.remove('fold');
             this.toast('已发送到频道：' + itemFullLabel(it), '#9fe8ff');
@@ -2009,7 +2009,7 @@ const UI = {
 
   /* ================= 世界频道 ================= */
   buildChat() {
-    this.elChatMsgs = $('chatMsgs'); this.elChatInput = $('chatInput'); this.elChatCh = $('chatCh');
+    this.elChatMsgs = $('chatMsgs'); this.elChatInput = $('chatInput');
     if (!this.elChatMsgs) return;
     $('chatSend').onclick = () => this.sendChat();
     $('chatToggle').onclick = () => $('chatWrap').classList.toggle('fold');
@@ -2018,9 +2018,82 @@ const UI = {
       e.stopPropagation();
       if (e.key === 'Enter') this.sendChat();
     });
+    /* 九个频道标签页：世界/中文/English/交易/队伍/公会/私聊/好友/系统，消息各自独立 */
+    this.chatCh = '世界';
+    this.unread = {};
+    const tabs = $('chatTabs');
+    tabs.innerHTML = '';
+    this.chatTabEls = {};
+    Chat.chans.forEach(ch => {
+      const t = el('div', 'ctab' + (ch === this.chatCh ? ' on' : ''), ch);
+      t.title = ch + '频道';
+      t.onclick = ev => { ev.stopPropagation(); this.switchChatCh(ch); };
+      this.chatTabEls[ch] = t;
+      tabs.appendChild(t);
+    });
+    /* 未读角标：非当前频道来消息时标签亮红点 */
+    Chat.onPush = m => {
+      if (m.ch && m.ch !== this.chatCh) {
+        this.unread[m.ch] = (this.unread[m.ch] || 0) + 1;
+        const t = this.chatTabEls[m.ch];
+        if (t) t.classList.add('has');
+      }
+    };
+    /* 独立容器：标题栏按住可拖拽移动，位置记忆 */
+    this.makeChatDraggable();
+    this.restoreChatPos();
     Chat.onChange = () => this.renderChat();
     Chat.system('欢迎来到星落大陆！按 Enter 发言；装备面板可「发送链接」分享战力。');
+    Chat.push({ who: '系统', ch: '世界', text: '欢迎来到星落大陆！点击上方标签可切换 世界/中文/English/交易/队伍/公会/私聊/好友/系统 频道。', sys: true });
     this.renderChat();
+  },
+  /** 切换频道标签：清未读、更新标题与高亮、重渲染 */
+  switchChatCh(ch) {
+    this.chatCh = ch;
+    this.unread[ch] = 0;
+    for (const k in this.chatTabEls) {
+      this.chatTabEls[k].classList.toggle('on', k === ch);
+      if (k === ch) this.chatTabEls[k].classList.remove('has');
+    }
+    const ttl = $('chatTitle'); if (ttl) ttl.textContent = ch + '频道';
+    this.renderChat();
+  },
+  /** 聊天窗拖拽：按住标题栏整体移动（clamp 在视口内，记忆位置） */
+  makeChatDraggable() {
+    const w = $('chatWrap'), head = $('chatHead');
+    if (!w || !head || w._dragChat) return;
+    w._dragChat = true;
+    let drag = null;
+    head.addEventListener('mousedown', e => {
+      if (e.button !== 0 || e.target === $('chatToggle')) return;   // 左键且非折叠按钮才拖
+      const r = w.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const x = clamp(e.clientX - drag.dx, 4, Math.max(4, window.innerWidth - 80));
+      const y = clamp(e.clientY - drag.dy, 4, Math.max(4, window.innerHeight - 40));
+      w.style.left = x + 'px'; w.style.top = y + 'px';
+      w.style.right = 'auto'; w.style.bottom = 'auto';
+      w._dragMoved = true;
+    });
+    window.addEventListener('mouseup', () => {
+      if (!drag) return;
+      drag = null;
+      try { localStorage.setItem('sf.chat.pos', JSON.stringify({ l: w.style.left, t: w.style.top })); } catch (e) { /* 忽略 */ }
+    });
+  },
+  /** 恢复上次拖拽的位置 */
+  restoreChatPos() {
+    const w = $('chatWrap'); if (!w) return;
+    try {
+      const d = JSON.parse(localStorage.getItem('sf.chat.pos') || 'null');
+      if (d && d.l && d.t) {
+        w.style.left = d.l; w.style.top = d.t;
+        w.style.right = 'auto'; w.style.bottom = 'auto';
+      }
+    } catch (e) { /* 忽略 */ }
   },
   focusChat() {
     if (!this.elChatInput) return;
@@ -2033,24 +2106,26 @@ const UI = {
     const raw = this.elChatInput.value.trim();
     if (!raw) { this.elChatInput.blur(); return; }
     this.elChatInput.value = '';
+    const ch = this.chatCh || '世界';
     const m = raw.match(/^#(\d+)$/);
     if (m) {                                  // #索引 = 发送背包内该件装备
       const it = p.bag[+m[1]];
       if (it && it.type === 'gear') {
-        Chat.sayGear(p.name, this.elChatCh.value, it);
+        Chat.sayGear(p.name, ch, it);
         this.elChatInput.blur();
         return;
       }
     }
-    Chat.say(p.name, this.elChatCh.value, raw);
+    Chat.say(p.name, ch, raw);
     this.elChatInput.blur();
   },
   renderChat() {
     const box = this.elChatMsgs; if (!box) return;
     box.innerHTML = '';
-    Chat.msgs.slice(-60).forEach(m => {
+    const cur = this.chatCh || '世界';
+    Chat.box(cur).slice(-60).forEach(m => {
       const d = el('div', 'cmsg' + (m.self ? ' self' : '') + (m.sys ? ' sys' : ''), '');
-      d.appendChild(el('span', 'cwho', '[' + (m.ch || '世界') + '] ' + m.who + '：'));
+      d.appendChild(el('span', 'cwho', m.who + '：'));
       if (m.text) d.appendChild(el('span', '', m.text));
       if (m.link) {
         const inst = m.link.t === 'item'
@@ -2195,7 +2270,7 @@ const UI = {
     }
     const bLink = el('button', 'btn', '发送至聊天窗');
     bLink.onclick = () => {
-      const ch = $('chatCh') ? $('chatCh').value : '世界';
+      const ch = this.chatCh || '世界';
       if (isGear) Chat.sayGear(p.name, ch, inst, '');
       else Chat.sayItem(p.name, ch, inst, '');
       const w = $('chatWrap'); if (w) w.classList.remove('fold');
