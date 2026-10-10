@@ -10,6 +10,25 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:var(--bg)}
 body{color:var(--txt);font:13px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;user-select:none;cursor:default}
+
+/* ============ 交互隔离（配合 src/41_input_isolation.js） ============ */
+/* 布局隔离：无滚动条、禁止下拉刷新与左右滑动返回（移动端手势） */
+html,body{overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+/* 禁止文本选中（含各浏览器前缀）；输入框内仍可选中以便聊天/改数量 */
+html,body{-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;
+  -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;-moz-user-select:text;
+  -ms-user-select:text;user-select:text}
+/* 禁止图片 / 链接 / 画布被拖拽（避免误触发系统拖放或“新标签打开”） */
+img,a,canvas{-webkit-user-drag:none;user-drag:none;-webkit-user-select:none;user-select:none}
+/* 触摸隔离：画布 / HUD / 开场界面 / 摇杆 / 触屏按钮 禁用滚动与双指缩放 */
+#cv,#hud,#screenRoot,#menuBar,#lifeMenu,.joy,.mActs,.mMid,.mMenu,.mbtn,.mMenuBtn{touch-action:none}
+/* 面板内容区、聊天记录、日志仍可上下滚动 */
+#panelRoot,.pbody,#chatMsgs,#log,#mMenuList{touch-action:pan-y}
+/* 鼠标手势扩展提示条 */
+.ilTip{position:absolute;left:50%;top:78px;transform:translateX(-50%);z-index:90;max-width:min(90vw,560px);
+  padding:8px 14px;border-radius:8px;background:rgba(9,13,25,.94);border:1px solid var(--gold);
+  color:var(--gold);font-size:12px;line-height:1.5;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.6)}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated;background:#05070f}
 .hide{display:none !important}
 

@@ -13,13 +13,14 @@
 </head>
 <body>
 
-<canvas id="cv"></canvas>
+<!-- 画布禁止拖拽：避免误触发系统拖放 / “在新标签页打开” -->
+<canvas id="cv" draggable="false"></canvas>
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hide">
   <!-- 左上：头像/血条 -->
   <div id="topbar">
-    <div id="avatarBox"><canvas id="avatarCv" width="96" height="96"></canvas><span id="pLv">Lv.1</span></div>
+    <div id="avatarBox"><canvas id="avatarCv" draggable="false" width="96" height="96"></canvas><span id="pLv">Lv.1</span></div>
     <div id="pinfo">
       <div id="pName">星痕者</div>
       <div class="bar bhp"><i id="bhp"></i><span id="bhptxt">100/100</span></div>
@@ -33,7 +34,7 @@
 
   <!-- 右上：小地图 -->
   <div id="mmwrap">
-    <canvas id="mm" width="240" height="240"></canvas>
+    <canvas id="mm" draggable="false" width="240" height="240"></canvas>
     <div id="regionName">翠风平原</div>
     <div id="coord">0,0</div>
   </div>
@@ -90,7 +91,7 @@
           <button class="btn" id="ovRefresh">重新扫描</button>
         </div>
         <div id="ovTabs" class="tabs"></div>
-        <canvas id="ovCv" width="600" height="600"></canvas>
+        <canvas id="ovCv" draggable="false" width="600" height="600"></canvas>
         <div id="ovFoot" class="mini"></div>
       </div>
       <div class="ovSide" id="ovSide"></div>
@@ -100,7 +101,7 @@
 
 <!-- ============ 开场 / 标题界面 ============ -->
 <div id="screenRoot">
-  <canvas id="titleCv"></canvas>
+  <canvas id="titleCv" draggable="false"></canvas>
   <div id="titleUI">
     <div id="logo">
       <div class="cn">星 落 大 陆</div>
@@ -117,7 +118,7 @@
   </div>
 
   <!-- 序章动画 -->
-  <div id="intro" class="hide"><canvas id="introCv"></canvas><div id="introTxt"></div><div id="introSkip">点击跳过 ▸</div></div>
+  <div id="intro" class="hide"><canvas id="introCv" draggable="false"></canvas><div id="introTxt"></div><div id="introSkip">点击跳过 ▸</div></div>
 
   <!-- 角色创建 -->
   <div id="create" class="hide">
@@ -132,6 +133,8 @@
 
 <div id="loading" class="hide"><div class="spinner"></div><span>正在凝聚大陆…</span></div>
 
+<!-- 交互隔离层：最先加载，浏览器默认交互（右键菜单/手势/选中/拖拽/滚动）一律禁用 -->
+<script src="src/41_input_isolation.js"></script>
 <script src="src/00_utils.js"></script>
 <script src="src/00_assets.js"></script>
 <script src="src/01_quality.js"></script>
