@@ -534,7 +534,7 @@ const UI = {
     const ok = my >= (nd.req || 1);
     html += '<div class="tr">采集等级：<b class="' + (ok ? 'ok' : 'bad') + '">需要 Lv.' + (nd.req || 1) + '</b>　当前 ' + SKILL_CN[nd.skill] + ' Lv.' + my + '</div>';
     html += '<div class="tr">可采集次数：<b style="color:#ffd76a">' + (nd.skill === 'fish' ? '无限' : nd.amount + ' / ' + nd.max) + '</b>' +
-      (nd.amount <= 0 && nd.skill !== 'fish' ? '　<span class="bad">已采空（等待刷新）</span>' : '') + '</div>';
+      (nd.amount <= 0 && nd.skill !== 'fish' ? '　<span class="bad">已采尽（资源点已消失）</span>' : '') + '</div>';
     html += '<div class="tr">单次耗时：' + g.gatherTime(nd).toFixed(1) + 's　稀有产出概率 ' + Math.round((nd.rare ? 0.06 : 0) * 100 + (p.stats.rareFind || 0) / 4) + '%</div>';
     html += '<div class="td">产出预估：<br>';
     if (nd.skill === 'fish') {

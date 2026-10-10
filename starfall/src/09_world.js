@@ -4,7 +4,7 @@
  * ==========================================================*/
 'use strict';
 
-const T_NODE_RESPAWN = 90000; // 采集点刷新 90 秒
+/* 采集点不再设置倒计时刷新：次数采尽即永久消失（离开足够远、区块重载后才会按种子重建） */
 
 /* 野外宝箱的开启记录：区块卸载后重新生成时据此恢复"已开"状态
  * 键 = 世界格坐标 "tx,ty"，值 = 开启时刻（与 openChest 的 120 秒回补一致，不写存档） */
@@ -291,8 +291,10 @@ class World {
     const key = { mine: 'ore', log: 'wood', herb: 'herb', bug: 'bug' }[skill];
     const pool = rr.res[key];
     const p = forceId ? pool.find(o => o.id === forceId) || weightedPick(pool, 'w') : weightedPick(pool, 'w');
+    /* 每个采集点的可采集次数随机生成（2~6 次）；max = 自身随机值，不再统一 */
+    const cnt = irnd(2, 6);
     return {
-      skill: skill, itemId: p.id, req: p.lv || 1, tx: tx, ty: ty, amount: irnd(2, 4), max: 4,
+      skill: skill, itemId: p.id, req: p.lv || 1, tx: tx, ty: ty, amount: cnt, max: cnt,
       respawnAt: 0, dead: 0, rare: chance(0.06)
     };
   }
@@ -352,14 +354,24 @@ class World {
     }
     return bd <= rad ? best : null;
   }
-  /** 采集一次：返回本次是否成功 */
+  /** 采集一次：次数归零则资源点彻底消失 */
   takeNode(nd, n) {
     nd.amount -= (n || 1);
-    if (nd.amount <= 0) {
-      nd.amount = 0; nd.respawnAt = Date.now() + T_NODE_RESPAWN;
-      const ch = this.chunks.get((nd.tx >> 4) + ',' + (nd.ty >> 4));
-      if (ch) ch.canvas = null; // 触发重绘（物件消失）
-    }
+    if (nd.amount > 0) return true;
+    nd.amount = 0;
+    this.removeNode(nd);
+    return true;
+  }
+  /** 采尽：从区块物件表 / 索引里彻底移除（地图上看不见、查不到、标签不再显示）。
+   *  只有区块被卸载后再次进入才会按种子重新生成，借此避免整张图的资源被永久掏空。 */
+  removeNode(nd) {
+    const ch = this.chunks.get((nd.tx >> 4) + ',' + (nd.ty >> 4));
+    if (!ch) return;
+    const lx = nd.tx & 15, ly = nd.ty & 15;
+    for (let i = ch.objs.length - 1; i >= 0; i--) if (ch.objs[i].node === nd) ch.objs.splice(i, 1);
+    ch.nodes.delete(lx + ',' + ly);
+    ch.canvas = null;             // 触发重绘：模型从地图上消失
+    nd.dead = 1;
   }
   /** 随机找一处适合刷怪的空地 */
   randomFreeTile(tx, ty, rad, tries) {
@@ -372,16 +384,8 @@ class World {
     return null;
   }
 
-  update(dt) {
-    const now = Date.now();
-    for (const ch of this.chunks.values()) {
-      for (const nd of ch.nodes.values()) {
-        if (nd.amount <= 0 && nd.respawnAt && now >= nd.respawnAt) {
-          nd.amount = nd.max; nd.respawnAt = 0; nd.dead = 0;
-        }
-      }
-    }
-  }
+  /* 采集点不再按倒计时原地刷新：采尽即消失，靠区块重载重建 */
+  update(dt) { }
 
   /* ---------- 渲染 ---------- */
   chunkCanvas(ch, regionKeyFallback) {

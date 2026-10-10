@@ -687,7 +687,8 @@ class Game {
       const bt = this.nearbyBoat();
       if (bt) { this.interactHint = 'E 上船'; this.updateNodePop(); return; }
       const nd = this.world.nearestNode(tx, ty, 2.6);
-      if (nd) txt = 'E 直接采集 ' + this.nodeName(nd.node) + '（10s）｜ 左键 打开采集面板';
+      if (nd) txt = 'E 直接采集 ' + this.nodeName(nd.node) +
+        '（剩 ' + (nd.node.skill === 'fish' ? '∞' : nd.node.amount) + ' 次 · 10s）｜ 左键 打开采集面板';
       else {
         const objs = this.world.objectsNear(tx, ty, 2).sort((a, b) => dist(a.tx, a.ty, tx, ty) - dist(b.tx, b.ty, tx, ty));
         const o = objs.find(x => ['chest', 'bench', 'portal', 'npc'].includes(x.o.kind));
@@ -864,12 +865,8 @@ class Game {
     if (p.life[nd.skill].lv < (nd.req || 1)) return this.stopTask(SKILL_CN[nd.skill] + '等级不足');
     if (t.endTime && Date.now() >= t.endTime) return this.stopTask('定时采集完成');
     if (!t.infinite && t.remain <= 0 && !t.endTime) return this.stopTask('批次采集完成');
-    // 资源点采空 → 自动补充（自动采集期间视为持续产出）
-    if (nd.amount <= 0 && nd.skill !== 'fish') {
-      nd.amount = nd.max; nd.respawnAt = 0;
-      const ch = this.world.chunks.get((nd.tx >> 4) + ',' + (nd.ty >> 4));
-      if (ch) ch.canvas = null;
-    }
+    // 资源点已被采尽（已从地图上消失）→ 停止自动采集，不再原地补充
+    if (nd.amount <= 0 || nd.dead) return this.stopTask('资源点已采尽');
     if (!p.bag.some(s => !s)) return this.stopTask('背包已满');
     t.per = Math.min(0.6, this.gatherTime(nd));
     t.timer += dt;
@@ -889,6 +886,12 @@ class Game {
     }
     this.world.takeNode(nd, 1);
     this.fx.push({ x: nd.tx * TILE_PX + 16, y: nd.ty * TILE_PX + 16, r: 40, ttl: .3, color: '#cfe8b8', type: 'circle' });
+    /* 次数耗尽 → 资源点已从地图上消失：收起它的采集面板 / 悬浮预览 */
+    if (nd.amount <= 0) {
+      if (UI.panels.node && UI._nodeNd === nd) UI.panels.node.el.style.display = 'none';
+      UI.tipHide('node');
+      if (this.hover === nd) this.hover = null;
+    }
     /* 采集音按材质区分：矿=金属叮、木=闷响、草=沙沙；批量采集（quiet）不播，避免刷屏 */
     if (typeof Snd !== 'undefined' && Snd.play && !g.quiet) {
       Snd.play(skill === 'mine' ? 'mine' : skill === 'log' ? 'chop' : 'herb');
@@ -1614,8 +1617,10 @@ class Game {
       ctx.globalAlpha = 1;
     }
   }
-  /** 采集资源名称：玩家方圆 2 格内的资源点，头顶 1 格显示金色名字
-   * 屏幕空间绘制 → 字号不随视野缩放变化；已采尽的不显示 */
+  /** 采集资源标签：陆地资源点头顶 1 格显示【蓝色】文字 = 资源名 + 剩余可采次数
+   *  · 屏幕空间绘制 → 字号不随视野缩放变化
+   *  · 4 格内可见并按距离淡出（2 格内最亮），远处不糊屏；单帧上限 40 个
+   *  · 次数归零的资源点已从地图上移除，自然不再显示 */
   drawNodeLabels(ctx) {
     if (this.inHome || !this.world) return;
     const p = this.player, z = this.cam.zoom || 1;
@@ -1626,31 +1631,34 @@ class Game {
     const ptx = Math.floor(p.x / TILE_PX), pty = Math.floor(p.y / TILE_PX);
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
     let n = 0;
-    for (let cy = c0y; cy <= c1y && n < 24; cy++) {
-      for (let cx = c0x; cx <= c1x && n < 24; cx++) {
+    for (let cy = c0y; cy <= c1y && n < 40; cy++) {
+      for (let cx = c0x; cx <= c1x && n < 40; cx++) {
         const ch = this.world.chunks.get(cx + ',' + cy);
         if (!ch) continue;
         for (const ob of ch.objs) {
           const nd = ob.node;
-          if (!nd || nd.amount <= 0) continue;                 // 采尽 / 钓鱼点无限
+          if (!nd || nd.amount <= 0) continue;                 // 已采尽移除后的残留保护
           const tx = cx * CHUNK + ob.lx, ty = cy * CHUNK + ob.ly;
-          if (Math.max(Math.abs(tx - ptx), Math.abs(ty - pty)) > 2) continue;   // 方圆 2 格
-          const name = nd.itemId ? ((ITEMS[nd.itemId] && ITEMS[nd.itemId].name) || '资源') : '渔点';
+          const d = Math.max(Math.abs(tx - ptx), Math.abs(ty - pty));
+          if (d > 4) continue;                                 // 4 格以外的不显示
+          /* 陆地资源：名 + 剩余次数；渔点次数无限，只显示名字 */
+          let s = nd.itemId ? ((ITEMS[nd.itemId] && ITEMS[nd.itemId].name) || '资源') : '渔点';
+          if (nd.skill !== 'fish') s += ' ×' + nd.amount;
           const wx = tx * TILE_PX + 16 + (ob.ox || 0), wy = ty * TILE_PX + TILE_PX - 2 + (ob.oy || 0);
           const sx = (wx - this.cam.x) * z, sy = (wy - this.cam.y) * z - TILE_PX * z;   // 头顶上方 1 格
-          ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
-          const tw = ctx.measureText(name).width;
-          ctx.globalAlpha = 0.9;
+          const tw = ctx.measureText(s).width;
+          ctx.globalAlpha = d <= 2 ? 0.95 : (d <= 3 ? 0.75 : 0.55);
           ctx.fillStyle = 'rgba(8,12,24,.72)';
           ctx.fillRect(sx - tw / 2 - 6, sy - 15, tw + 12, 18);
-          ctx.fillStyle = '#000'; ctx.fillText(name, sx + 1, sy);   // 描边：保证浅色地形上也看得清
-          ctx.fillStyle = '#ffd76a'; ctx.fillText(name, sx, sy - 1);
-          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#000'; ctx.fillText(s, sx + 1, sy);   // 黑描边：浅色地形上也看得清
+          ctx.fillStyle = '#7fd6ff'; ctx.fillText(s, sx, sy - 1); // 蓝色文字
           n++;
         }
       }
     }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
   drawFloats(ctx) {
