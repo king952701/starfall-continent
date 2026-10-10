@@ -92,7 +92,8 @@ const UI = {
 
   /* ---------- HUD ---------- */
   /* ---------- 系统功能按钮栏（开源图标：Feather Icons，MIT 许可） ----------
-   * 全部功能入口集中在这里；「生活」聚合采集挂机 / 生活技能 / 排行榜 / 成就。
+   * 系统菜单上线后，功能入口统一收进「菜单」星空面板；按钮栏只留：
+   * 「菜单」（系统菜单入口）+「聊天」（聊天窗开关），其余冗余按钮已删除。
    * 手机端隐藏此栏（右下角「菜单」用同一套图标），避免遮挡摇杆。 */
   ICONS: {
     bag: '<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
@@ -129,60 +130,42 @@ const UI = {
       bar.appendChild(b);
       return b;
     };
-    /* 系统菜单入口：点击弹出一站式星空功能面板（第一格） */
+    /* 系统菜单入口：点击弹出一站式星空功能面板（唯一功能入口） */
     this.menuBtnEl = mk('menu', '菜单', () => this.toggleSysMenu());
-    mk('bag', '背包', () => this.toggle('bag', () => this.openBag()));
-    mk('user', '角色', () => this.toggle('char', () => this.openChar()));
-    mk('tool', '制作', () => this.toggle('craft', () => this.openCraft()));
-    mk('talent', '天赋', () => this.toggle('talent', () => this.openTalent()));
-    /* 生活菜单：采集挂机 / 生活技能 / 排行榜 / 成就 归集于此 */
-    const lifeBtn = mk('life', '生活', () => {
-      const m = $('lifeMenu');
-      if (!m) return;
-      const open = m.classList.contains('hide');
-      m.classList.toggle('hide', !open);
-      lifeBtn.classList.toggle('on', open);
-      if (!open) return;
-      this.syncLifeMenu();
-      m.innerHTML = '';
-      const item = (icon, label, fn) => {
-        const b = el('div', 'mBtnI');
-        b.innerHTML = this.iconSvg(icon) + '<b>' + label + '</b>';
-        b.onclick = e => {
-          e.stopPropagation();
-          m.classList.add('hide'); lifeBtn.classList.remove('on');
-          fn();
-        };
-        m.appendChild(b);
-      };
-      item('idle', '采集挂机', () => this.toggle('idle', () => this.openIdle()));
-      item('life', '生活技能', () => this.toggle('skills', () => this.openSkills()));
-      item('rank', '排行榜', () => this.toggle('rank', () => this.openRank()));
-      item('ach', '成就', () => this.toggle('ach', () => this.openAch()));
-    });
-    mk('idle', '挂机', () => this.toggle('idle', () => this.openIdle()));   // 采集挂机：独立按钮
-    mk('map', '地图', () => this.toggle('map', () => this.openMap()));
-    mk('codex', '图鉴', () => this.toggle('codex', () => this.openCodex()));
-    mk('market', '拍卖', () => this.toggle('market', () => this.openMarket()));
-    mk('nav', '导航', () => this.toggleOverview());
-    mk('settings', '设置', () => { if (typeof Settings !== 'undefined') Settings.open(); });
-    mk('save', '存档', () => { if (this.game) this.game.save(true); this.toast('已存档', '#ffd76a'); });
     /* 聊天窗：独立功能按钮（喇叭图标），点击弹出 / 收起可移动可拉伸的聊天窗 */
     this.chatBtnEl = mk('horn', '聊天', () => this.toggleChatWin());
-    /* 点击别处关闭生活菜单 */
+    /* 点击别处关闭生活菜单（生活菜单现由系统菜单「生活」格打开） */
     if (!this._lifeClose) {
       this._lifeClose = true;
       window.addEventListener('mousedown', e => {
         const m = $('lifeMenu');
-        if (m && !m.classList.contains('hide') && !m.contains(e.target)) {
-          m.classList.add('hide');
-          const lb = document.querySelector('#menuBar .mBtnI');
-          if (lb) document.querySelectorAll('#menuBar .mBtnI').forEach(x => { if (x.textContent.indexOf('生活') >= 0) x.classList.remove('on'); });
-        }
+        if (m && !m.classList.contains('hide') && !m.contains(e.target)) m.classList.add('hide');
       });
     }
     /* 独立容器：按住任意处拖拽自由移动（点击 / 拖拽自动区分，位置记忆） */
     this.makeMenuBarDraggable();
+  },
+
+  /** 生活聚合菜单：采集挂机 / 生活技能 / 排行榜 / 成就。
+   *  原按钮栏「生活」按钮的子菜单，按钮精简后改由系统菜单「生活」格打开。 */
+  openLifeMenu() {
+    const m = $('lifeMenu');
+    if (!m) { this.toggle('skills', () => this.openSkills()); return; }
+    const wasOpen = !m.classList.contains('hide');
+    m.classList.toggle('hide', wasOpen);
+    if (wasOpen) return;
+    this.syncLifeMenu();
+    m.innerHTML = '';
+    const item = (icon, label, fn) => {
+      const b = el('div', 'mBtnI');
+      b.innerHTML = this.iconSvg(icon) + '<b>' + label + '</b>';
+      b.onclick = e => { e.stopPropagation(); m.classList.add('hide'); fn(); };
+      m.appendChild(b);
+    };
+    item('idle', '采集挂机', () => this.toggle('idle', () => this.openIdle()));
+    item('life', '生活技能', () => this.toggle('skills', () => this.openSkills()));
+    item('rank', '排行榜', () => this.toggle('rank', () => this.openRank()));
+    item('ach', '成就', () => this.toggle('ach', () => this.openAch()));
   },
 
   /** 功能按钮栏拖拽：按下后位移 >6px 判定为拖拽，松手记忆位置；
@@ -298,10 +281,7 @@ const UI = {
     const open = m.classList.contains('hide');
     m.classList.toggle('hide', !open);
     if (this.menuBtnEl) this.menuBtnEl.classList.toggle('on', open);
-    if (open) {                                       // 打开时关闭生活菜单，避免叠加
-      const life = $('lifeMenu');
-      if (life) life.classList.add('hide');
-    }
+    /* 生活菜单不在此处关闭：它与星空面板位置不重叠，开合语义由 openLifeMenu 自持 */
   },
   /** 系统菜单动作分发（坐骑 / 宠物为预留位） */
   runSysAction(act, label) {
@@ -310,7 +290,7 @@ const UI = {
       case 'char': this.toggle('char', () => this.openChar()); break;
       case 'craft': this.toggle('craft', () => this.openCraft()); break;
       case 'talent': this.toggle('talent', () => this.openTalent()); break;
-      case 'skills': this.toggle('skills', () => this.openSkills()); break;
+      case 'skills': this.openLifeMenu(); break;   // 生活：聚合菜单（采集挂机/生活技能/排行榜/成就）
       case 'idle': this.toggle('idle', () => this.openIdle()); break;
       case 'map': this.toggle('map', () => this.openMap()); break;
       case 'ov': this.toggleOverview(); break;
