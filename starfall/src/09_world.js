@@ -6,6 +6,10 @@
 
 const T_NODE_RESPAWN = 90000; // 采集点刷新 90 秒
 
+/* 野外宝箱的开启记录：区块卸载后重新生成时据此恢复"已开"状态
+ * 键 = 世界格坐标 "tx,ty"，值 = 开启时刻（与 openChest 的 120 秒回补一致，不写存档） */
+const CHEST_OPENED = {};
+
 /* POI 布局模板：按坐标哈希取用 → 村落 / 哨站 / 集市 / 废墟 / 湖畔营地各不相同
  * 每个模板至少 1 个工作台（保证制作功能可达），房屋与 NPC 数量随规模缩放 */
 const POI_LAYOUTS = [
@@ -148,6 +152,26 @@ class World {
           ch.objs.push({ lx: lx, ly: ly, kind: 'chest', sp: Sprites.chest('#ffd76a'), ox: 0, oy: 0, solid: false, opened: 0 });
         }
         used.add(lx + ',' + ly);
+      }
+    }
+    /* --- 野外随机宝箱：按区块哈希决定有/无（坐标固定，重进同世界仍是同一处） --- */
+    if (hash2(cx, cy, this.seed + 20261010) < 0.38) {
+      /* 候选点最多试 8 次：水面 / 山体 / 已被占用的格子跳过（密度仍由上面的 38% 控制） */
+      for (let k = 0; k < 8; k++) {
+        const jx = Math.floor(hash2(cx * 8 + k, cy, this.seed + 313) * CHUNK);
+        const jy = Math.floor(hash2(cx, cy * 8 + k, this.seed + 717) * CHUNK);
+        const tx = btx + jx, ty = bty + jy;
+        const info = this.tileInfo(tx, ty);
+        const free = !info.water && !info.mountain && !info.sand && !ch.solid[jy * CHUNK + jx] && !used.has(jx + ',' + jy);
+        if (!free) continue;
+        const rare = hash2(tx, ty, this.seed + 5551) < 0.15;      // 15% 精致宝箱：金光更亮、物资翻倍
+        ch.objs.push({
+          lx: jx, ly: jy, kind: 'chest', wild: 1, rare: rare ? 1 : 0,
+          sp: Sprites.chest(rare ? '#fff0b0' : '#ffd76a'), ox: 0, oy: 0, solid: false,
+          opened: CHEST_OPENED[tx + ',' + ty] || 0
+        });
+        used.add(jx + ',' + jy);
+        break;
       }
     }
     /* --- 自然物件：抖动网格采样，一格 (4×4) 最多 1 个，密度可控且不成片 --- */

@@ -575,24 +575,46 @@ class Game {
     const now = Date.now();
     if (o.opened && now - o.opened < 120000) { UI.toast('宝箱已空', '#ff9a9a'); return; }
     o.opened = now;
+    /* 野外宝箱：记下坐标，区块卸载重生成时仍是"已开"状态（与 120 秒回补一致，不写存档） */
+    if (o.wild) {
+      if (typeof CHEST_OPENED !== 'undefined') {
+        CHEST_OPENED[tx + ',' + ty] = now;
+        if (Object.keys(CHEST_OPENED).length > 400) {              // 只清理过期项，避免无限增长
+          for (const k in CHEST_OPENED) if (now - CHEST_OPENED[k] > 600000) delete CHEST_OPENED[k];
+        }
+      }
+    }
     if (typeof Snd !== 'undefined' && Snd.play) Snd.play('chest');
     const ch = this.world.chunks.get((tx >> 4) + ',' + (ty >> 4));
     if (ch) ch.canvas = null;
     const p = this.player;
     const lv = clamp(regionLevelAt(regionAtTile(tx, ty), tx, ty), 1, 60);
+    const rare = !!o.rare;                                        // 精致宝箱：物资翻倍
     p.stat.chests++;
-    const gold = irnd(lv * 20, lv * 60);
+    this.burst(tx * TILE_PX + 16, ty * TILE_PX - 4, rare ? 22 : 12, rare ? ['#ffe9a0', '#fff6c4', '#ffd76a'] : ['#ffd76a', '#c9a24a'], { spd: 150, life: .6, up: 60, r: 3 });
+    const gold = irnd(lv * 20, lv * 60) * (rare ? 3 : 1);
     p.addGold(gold);
     this.floatTextAt(tx * TILE_PX, ty * TILE_PX, '+' + fmt(gold) + ' 金币', '#ffdf94');
-    if (chance(0.45)) {
-      const g = rollEquipDrop(lv, 'chest');
+    UI.log((rare ? '精致' : '') + '宝箱：' + fmt(gold) + ' 金币', '#ffdf94');
+    /* 装备：野外箱必给一件（精致箱更高品质） */
+    const gp = rare ? 1 : 0.45;
+    if (chance(gp)) {
+      const g = rollEquipDrop(rare ? lv + 4 : lv, 'chest');
       if (p.addInstance(g)) UI.log('获得装备：' + gearFullName(g), getQuality(g.q).color);
     }
-    for (let i = 0; i < 3; i++) {
-      if (chance(0.6)) {
-        const pool = [4315, 4316, 3001, 3003, 4301, 4302, 4303, 4333, 4319, 4320];
-        p.addItem(choice(pool), irnd(1, 3), irnd(2, 4));
+    /* 材料 / 消耗品：数量随箱型提升 */
+    const pool = [4315, 4316, 3001, 3003, 4301, 4302, 4303, 4333, 4319, 4320];
+    for (let i = 0; i < (rare ? 5 : 3); i++) {
+      if (chance(rare ? 0.8 : 0.6)) {
+        const id = choice(pool), n = irnd(1, 3) * (rare ? 2 : 1);
+        p.addItem(id, n, irnd(2, 4));
+        UI.log('获得物资 ' + ITEMS[id].name + ' ×' + n, '#cfe8b8');
       }
+    }
+    /* 药水：野外箱额外来一瓶（回血 / 回蓝） */
+    if (o.wild && chance(rare ? 1 : 0.5)) {
+      const pot = choice([3001, 3002, 3003, 3011, 3012].filter(id => ITEMS[id]));   // 生命/魔力药水 + 食物
+      if (pot) { p.addItem(pot, rare ? 3 : 1, 2); UI.log('获得药水 ' + ITEMS[pot].name, '#9fe8ff'); }
     }
     // 种子：按所在区域等级解锁，保证高等级作物（及依赖它们的烹饪）可自给
     const seedPool = Object.values(ITEMS).filter(i => i.type === 'seed' && lv >= (i.lv || 1));
@@ -1200,6 +1222,7 @@ class Game {
     }
     this.drawFloats(ctx);
     ctx.restore();
+    if (!this.inHome) this.drawNodeLabels(ctx);   // 附近 2 格内采集资源的金色名称（屏幕空间，字号不随缩放变化）
     this.drawAmbient(ctx);             // 环境粒子（屏幕空间，落在角色之前）
     this.drawAtmosphere(ctx);          // 远景雾化 + 昼夜光照（屏幕空间叠加）
     if (typeof Weather !== 'undefined') Weather.drawSky(ctx, this);   // 雨丝 / 雪花 / 阵风 / 闪电（最上层）
@@ -1588,6 +1611,45 @@ class Game {
       }
       ctx.globalAlpha = 1;
     }
+  }
+  /** 采集资源名称：玩家方圆 2 格内的资源点，头顶 1 格显示金色名字
+   * 屏幕空间绘制 → 字号不随视野缩放变化；已采尽的不显示 */
+  drawNodeLabels(ctx) {
+    if (this.inHome || !this.world) return;
+    const p = this.player, z = this.cam.zoom || 1;
+    const CS = CHUNK * TILE_PX;
+    const vw = this.cam.w / z, vh = this.cam.h / z;
+    const c0x = Math.floor(this.cam.x / CS) - 1, c1x = Math.floor((this.cam.x + vw) / CS) + 1;
+    const c0y = Math.floor(this.cam.y / CS) - 1, c1y = Math.floor((this.cam.y + vh) / CS) + 1;
+    const ptx = Math.floor(p.x / TILE_PX), pty = Math.floor(p.y / TILE_PX);
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    let n = 0;
+    for (let cy = c0y; cy <= c1y && n < 24; cy++) {
+      for (let cx = c0x; cx <= c1x && n < 24; cx++) {
+        const ch = this.world.chunks.get(cx + ',' + cy);
+        if (!ch) continue;
+        for (const ob of ch.objs) {
+          const nd = ob.node;
+          if (!nd || nd.amount <= 0) continue;                 // 采尽 / 钓鱼点无限
+          const tx = cx * CHUNK + ob.lx, ty = cy * CHUNK + ob.ly;
+          if (Math.max(Math.abs(tx - ptx), Math.abs(ty - pty)) > 2) continue;   // 方圆 2 格
+          const name = nd.itemId ? ((ITEMS[nd.itemId] && ITEMS[nd.itemId].name) || '资源') : '渔点';
+          const wx = tx * TILE_PX + 16 + (ob.ox || 0), wy = ty * TILE_PX + TILE_PX - 2 + (ob.oy || 0);
+          const sx = (wx - this.cam.x) * z, sy = (wy - this.cam.y) * z - TILE_PX * z;   // 头顶上方 1 格
+          ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
+          const tw = ctx.measureText(name).width;
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = 'rgba(8,12,24,.72)';
+          ctx.fillRect(sx - tw / 2 - 6, sy - 15, tw + 12, 18);
+          ctx.fillStyle = '#000'; ctx.fillText(name, sx + 1, sy);   // 描边：保证浅色地形上也看得清
+          ctx.fillStyle = '#ffd76a'; ctx.fillText(name, sx, sy - 1);
+          ctx.globalAlpha = 1;
+          n++;
+        }
+      }
+    }
+    ctx.restore();
   }
   drawFloats(ctx) {
     ctx.textAlign = 'center';
